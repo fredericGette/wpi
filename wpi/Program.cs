@@ -94,7 +94,7 @@ namespace wpi
             // Send the "normal command" NOKR (reboot) to the phone
             // It will reboot in "normal" mode.
             usbDevice = new USBDevice(device.DevicePath);
-            byte[] RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // normal command NOKR = Reboot
+            byte[] RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR = Reboot
             Console.WriteLine("Send the following command to the interface:\nNOKR");
             usbDevice.OutputPipe.Write(RebootCommand, 0, RebootCommand.Length);
 
