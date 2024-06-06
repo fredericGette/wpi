@@ -9,8 +9,8 @@ namespace wpi
         static void Main(string[] args)
         {
             // Look for a phone connected on a USB port and exposing interface
-            // known as "Apollo" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
-            // known as "New Combi" interface in WPInternals
+            // - known as "Apollo" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
+            // - known as "New Combi" interface in WPInternals
             // This interface allows to send jsonRPC (Remote Procedure Call) (to reboot the phone in flash mode for example).
             // Only a phone in "normal" mode exposes this interface. 
             Guid guidApolloDeviceInterface = new Guid("{7EAFF726-34CC-4204-B09D-F95471B873CF}");
