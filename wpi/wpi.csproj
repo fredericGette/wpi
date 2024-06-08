@@ -73,8 +73,10 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CareConnectivity.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="USB.cs" />
     <Compile Include="USBAsyncResult.cs" />
     <Compile Include="USBBaseClass.cs" />
     <Compile Include="USBDevice.cs" />
