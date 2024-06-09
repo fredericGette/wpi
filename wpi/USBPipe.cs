@@ -41,6 +41,48 @@ namespace wpi
             }
         }
 
+        public void printRaw(byte[] values, int length)
+        {
+            string characters = "";
+            bool truncated = false;
+            int truncatedLength = length;
+            if (truncatedLength > 520) // display at least the first sector of the NOKT response (header + error code + 512 bytes)
+            {
+                truncatedLength = 520;
+                truncated = true;
+            }
+            int normalizedLength = ((truncatedLength / 19) + 1) * 19; // display 19 values by line
+            for (int i = 0; i < normalizedLength; i++)
+            {
+                if (i < length)
+                {
+                    Console.Write("{0:X2} ", values[i]);
+                    if (values[i] > 31 && values[i] < 127)
+                    {
+                        characters += (char)values[i] + "";
+                    }
+                    else
+                    {
+                        characters += ".";
+                    }
+                }
+                else
+                {
+                    Console.Write("   ");
+                }
+
+                if ((i + 1) % 19 == 0)
+                {
+                    Console.WriteLine(" {0}",characters);
+                    characters = "";
+                }
+            }
+            if (truncated)
+            {
+                Console.WriteLine("Displayed only the first {0} bytes of {1} bytes.", truncatedLength, length);
+            }
+        }
+
         /// <summary>
         /// Maximum packet size for transfers on this endpoint
         /// </summary>
@@ -122,6 +164,9 @@ namespace wpi
                 uint bytesRead;
 
                 _device.ReadPipe(Interface.InterfaceIndex, _pipeInfo.PipeId, buffer, offset, length, out bytesRead);
+
+                Console.WriteLine("Received:");
+                printRaw(buffer, (int)bytesRead);
 
                 return (int)bytesRead;
             }
@@ -246,6 +291,9 @@ namespace wpi
         public void Write(byte[] buffer, int offset, int length)
         {
             CheckWriteParams(buffer, offset, length);
+
+            Console.WriteLine("Sent:");
+            printRaw(buffer, length);
 
             try
             {
