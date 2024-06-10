@@ -111,6 +111,7 @@ namespace wpi
 
             // Send the "normal command" NOKR (reboot) to the phone
             // It will reboot in "bootloader" mode.
+            // (then, after a timeout, the phone automatically continues to "normal" mode)
             byte[] RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR = Reboot
             CareConnectivityDeviceInterface.OutputPipe.Write(RebootCommand, 0, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
@@ -152,9 +153,78 @@ namespace wpi
             byte[] ReadGPTCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x54 }; // NOKT = Read GPT
             CareConnectivityDeviceInterface.OutputPipe.Write(ReadGPTCommand, 0, ReadGPTCommand.Length);
             ReadLength = CareConnectivityDeviceInterface.InputPipe.Read(Buffer);
-            CareConnectivity.parseNOKT(Buffer, ReadLength);
+            List<Partition> partitions = CareConnectivity.parseNOKT(Buffer, ReadLength);
 
-            // After a timeout, the phone automatically reboots to "normal" mode.
+            // Check first and last sectors of the partitions we are going to flash
+            // because the "Lumia V1 programmer" can only flashes sectors below 0xF400
+            // Theoritically, the last sector of the partition WINSECAPP is 0xF3FF
+            // But it can be above because it can be exchanged with BACKUP_WINSECAPP
+            // (same for SBL1, SBL2, SBL3, UEFI, TZ, RPM)
+            List<string> RevisePartitions = new List<string>(new string[] { "SBL1", "SBL2", "SBL3", "UEFI", "TZ", "RPM", "WINSECAPP" });
+            foreach (string RevisePartitionName in RevisePartitions)
+            {
+                Partition RevisePartition = null;
+                foreach (Partition partition in partitions)
+                {
+                    if (partition.name.Equals(RevisePartitionName))
+                    {
+                        RevisePartition = partition;
+                    }
+                }
+                Partition ReviseBackupPartition = null;
+                foreach (Partition partition in partitions)
+                {
+                    if (partition.name.Equals("BACKUP_" + RevisePartitionName))
+                    {
+                        ReviseBackupPartition = partition;
+                    }
+                }
+                if ((RevisePartition != null) && (ReviseBackupPartition != null) && (RevisePartition.firstSector > ReviseBackupPartition.firstSector))
+                {
+                    Console.WriteLine("Exchange {0} and {1}", RevisePartition.name, ReviseBackupPartition.name);
+                    Console.WriteLine("\t{0}: first sector 0x{1:X6} - last sector 0x{2:X6}", RevisePartition.name, RevisePartition.firstSector, RevisePartition.lastSector);
+                    Console.WriteLine("\t{0}: first sector 0x{1:X6} - last sector 0x{2:X6}", ReviseBackupPartition.name, ReviseBackupPartition.firstSector, ReviseBackupPartition.lastSector);
+
+                    ulong OriginalFirstSector = RevisePartition.firstSector;
+                    ulong OriginalLastSector = RevisePartition.lastSector;
+                    RevisePartition.firstSector = ReviseBackupPartition.firstSector;
+                    RevisePartition.lastSector = ReviseBackupPartition.lastSector;
+                    ReviseBackupPartition.firstSector = OriginalFirstSector;
+                    ReviseBackupPartition.lastSector = OriginalLastSector;
+                }
+
+                if (RevisePartition.lastSector >= 0xF400)
+                {
+                    Console.WriteLine("Last sector of partition {0} is still above 0xF400 (0x{1:X6})", RevisePartition.name, RevisePartition.lastSector);
+                    ProgramExit(-4);
+                }
+            }
+
+            // Go from "bootloader" mode to "flash" mode.
+            byte[] RebootToFlashCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x53 }; // NOKS
+            CareConnectivityDeviceInterface.OutputPipe.Write(RebootToFlashCommand, 0, RebootToFlashCommand.Length);
+            CareConnectivityDeviceInterface.Close();
+
+            Console.WriteLine("Look for a phone connected on a USB port");
+            Console.WriteLine("and exposing \"Care Connectivity\" device interface...\n");
+            devicePaths = USB.FindDevicePathsFromGuid(guidCareConnectivityDeviceInterface);
+            if (devicePaths.Count != 1)
+            {
+                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
+                ProgramExit(-1);
+            }
+            devicePath = devicePaths[0];
+            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                // Vendor ID 0x0421 : Nokia Corporation
+                // Product ID 0x066E : UEFI mode (including flash and bootloader mode)
+                Console.WriteLine("Incorrect VID (expecting 0x0421) and/or incorrect PID (expecting 0x066E)");
+                ProgramExit(-3);
+            }
+            // Open the interface
+            CareConnectivityDeviceInterface = new USBDevice(devicePath);
 
             ProgramExit(0);
         }

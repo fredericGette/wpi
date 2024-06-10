@@ -158,12 +158,14 @@ namespace wpi
             Console.WriteLine("eMMC manufacturer: {0}", Manufacturer);
         }
 
-        public static void parseNOKT(byte[] values, int length)
+        public static List<Partition> parseNOKT(byte[] values, int length)
         {
+            List<Partition> partitions = new List<Partition>();
+
             if (length < 0x4408) // header (NOKT) + error code (2 bytes) + 34 sectors of 512 bytes
             {
                 Console.WriteLine("Response too short.");
-                return;
+                return partitions;
             }
 
             // First 4 values must be NOKT
@@ -171,14 +173,14 @@ namespace wpi
             if (!isNOKT)
             {
                 Console.WriteLine("Not NOKT response.");
-                return;
+                return partitions;
             }
 
             ushort error = (ushort)((values[6] << 8) + values[7]);
             if (error > 0)
             {
                 Console.WriteLine("Error 0x" + error.ToString("X4"));
-                return;
+                return partitions;
             }
 
             uint sectorSize;
@@ -193,7 +195,7 @@ namespace wpi
             else
             {
                 Console.WriteLine("Unsupported sector size.");
-                return;
+                return partitions;
             }
 
             // first sector is Master Boot Record (MBR)
@@ -210,7 +212,7 @@ namespace wpi
             if (headerOffset == -1)
             {
                 Console.WriteLine("Header not found.");
-                return;
+                return partitions;
             }
 
             uint headerSize = (uint)(values[headerOffset + 15] << 24) + (uint)(values[headerOffset + 14] << 16) + (uint)(values[headerOffset + 13] << 8) + values[headerOffset + 12];
@@ -223,20 +225,53 @@ namespace wpi
             if (tableOffset + tableSize > length)
             {
                 Console.WriteLine("Response too short compared to the GPT table size.");
-                return;
+                return partitions;
             }
 
             uint partitionOffset = tableOffset;
+            Console.WriteLine("\nPartition name                       firstSect. lastSect.  Attributes");
+            Console.WriteLine("\tPartition type GUID");
+            Console.WriteLine("\tPartition GUID");
             while (partitionOffset < tableOffset + tableSize)
             {
-                byte[] nameBuffer = new byte[72];
+                byte[] guidBuffer = new byte[16];
+                Buffer.BlockCopy(values, (int)partitionOffset, guidBuffer, 0, 16);
+                Guid partitionTypeGuid = new Guid(guidBuffer);
+
+                Buffer.BlockCopy(values, (int)partitionOffset + 16, guidBuffer, 0, 16);
+                Guid partitionGuid = new Guid(guidBuffer);
+
+                ulong firstSector = (ulong)(values[partitionOffset + 39] << 56) + (ulong)(values[partitionOffset + 38] << 48) + (ulong)(values[partitionOffset + 37] << 40) + (ulong)(values[partitionOffset + 36] << 32) + (ulong)(values[partitionOffset + 35] << 24) + (ulong)(values[partitionOffset + 34] << 16) + (ulong)(values[partitionOffset + 33] << 8) + values[partitionOffset + 32];
+                ulong lastSector = (ulong)(values[partitionOffset + 47] << 56) + (ulong)(values[partitionOffset + 46] << 48) + (ulong)(values[partitionOffset + 45] << 40) + (ulong)(values[partitionOffset + 44] << 32) + (ulong)(values[partitionOffset + 43] << 24) + (ulong)(values[partitionOffset + 42] << 16) + (ulong)(values[partitionOffset + 41] << 8) + values[partitionOffset + 40];
+                ulong attributes = (ulong)(values[partitionOffset + 55] << 56) + (ulong)(values[partitionOffset + 54] << 48) + (ulong)(values[partitionOffset + 45] << 53) + (ulong)(values[partitionOffset + 52] << 32) + (ulong)(values[partitionOffset + 51] << 24) + (ulong)(values[partitionOffset + 50] << 16) + (ulong)(values[partitionOffset + 49] << 8) + values[partitionOffset + 48];
+
+                byte[] nameBuffer = new byte[72];  // 36 UTF-16 characters
                 Buffer.BlockCopy(values, (int)partitionOffset+56, nameBuffer, 0, 72);
                 string name = System.Text.Encoding.Unicode.GetString(nameBuffer);
-                Console.WriteLine("Partition {0} {1}", name, name.Length);
+                name = name.TrimEnd(new char[] { (char)0, ' ' }); // Remove multiple trailing \0 
+
+
+                if (firstSector != 0 && lastSector != 0)
+                {
+                    Console.WriteLine("{0} 0x{1:X6} - 0x{2:X6}  0x{3:X16}", name.PadRight(36, ' '), firstSector, lastSector, attributes);
+                    Console.WriteLine("\t{0}", partitionTypeGuid.ToString().ToUpper());
+                    Console.WriteLine("\t{0}\n", partitionGuid.ToString().ToUpper());
+
+                    Partition partition = new Partition();
+                    partition.firstSector = firstSector;
+                    partition.lastSector = lastSector;
+                    partition.attributes = attributes;
+                    partition.name = name;
+                    partition.partitionGuid = partitionGuid;
+                    partition.partitionTypeGuid = partitionTypeGuid;
+
+                    partitions.Add(partition);
+                }
 
                 partitionOffset += partitionEntrySize;
             }
 
+            return partitions;
         }
     }
 }

@@ -46,9 +46,9 @@ namespace wpi
             string characters = "";
             bool truncated = false;
             int truncatedLength = length;
-            if (truncatedLength > 520) // display at least the first sector of the NOKT response (header + error code + 512 bytes)
+            if (truncatedLength > 190) // display at max 10 lines of values
             {
-                truncatedLength = 520;
+                truncatedLength = 190;
                 truncated = true;
             }
             int normalizedLength = ((truncatedLength / 19) + 1) * 19; // display 19 values by line
