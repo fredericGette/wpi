@@ -149,7 +149,7 @@ namespace wpi
             ReadLength = CareConnectivityDeviceInterface.InputPipe.Read(Buffer);
             CareConnectivity.parseNOKV(Buffer, ReadLength);
 
-            Console.WriteLine("\nRead GUID Partitions Table (GPT)...");
+            Console.WriteLine("\nRead GUID Partition Table (GPT)...");
             byte[] ReadGPTCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x54 }; // NOKT = Read GPT
             CareConnectivityDeviceInterface.OutputPipe.Write(ReadGPTCommand, 0, ReadGPTCommand.Length);
             ReadLength = CareConnectivityDeviceInterface.InputPipe.Read(Buffer);
