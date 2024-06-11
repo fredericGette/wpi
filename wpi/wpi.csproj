@@ -78,15 +78,6 @@
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="USB.cs" />
-    <Compile Include="USBAsyncResult.cs" />
-    <Compile Include="USBBaseClass.cs" />
-    <Compile Include="USBDevice.cs" />
-    <Compile Include="USBDeviceDescriptor.cs" />
-    <Compile Include="USBInterface.cs" />
-    <Compile Include="USBInterfaceCollection.cs" />
-    <Compile Include="USBPipe.cs" />
-    <Compile Include="USBPipeCollection.cs" />
-    <Compile Include="USBPipePolicy.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

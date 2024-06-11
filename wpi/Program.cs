@@ -46,16 +46,17 @@ namespace wpi
             // It contains 2 pipes :
             // - output: to send commands to the phone.
             // - input: to get the result of the command (if needed).
-            USBDevice ApolloDeviceInterface = new USBDevice(devicePath);
+            USB ApolloDeviceInterface = new USB(devicePath);
 
             // Send command to reboot in flash mode
             string Request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"SetDeviceMode\",\"params\":{\"DeviceMode\":\"Flash\",\"ResetMethod\":\"HwReset\",\"MessageVersion\":0}}";
             byte[] OutBuffer = System.Text.Encoding.ASCII.GetBytes(Request);
-            ApolloDeviceInterface.OutputPipe.Write(OutBuffer, 0, OutBuffer.Length);
+            ApolloDeviceInterface.WritePipe(OutBuffer, 0, OutBuffer.Length);
 
+            uint bytesRead;
             byte[] Buffer = new byte[0x8000];
-            int readLength = ApolloDeviceInterface.InputPipe.Read(Buffer);
-            string resultString = System.Text.ASCIIEncoding.ASCII.GetString(Buffer, 0, readLength);
+            ApolloDeviceInterface.ReadPipe(Buffer, 0 , Buffer.Length, out bytesRead);
+            string resultString = System.Text.ASCIIEncoding.ASCII.GetString(Buffer, 0, (int)bytesRead);
             ApolloDeviceInterface.Close();
 
             Console.WriteLine("\nYou may have to wait 15s before the phone reboots in \"flash\" mode.");
@@ -73,8 +74,14 @@ namespace wpi
             // Whereas in "flash" or "bootloader" mode the PID of the device is 0x066E
             Guid guidCareConnectivityDeviceInterface = new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE);
             Console.WriteLine("Look for a phone connected on a USB port");
-            Console.WriteLine("and exposing \"Care Connectivity\" device interface...\n");
-            devicePaths = USB.FindDevicePathsFromGuid(guidCareConnectivityDeviceInterface);
+            Console.Write("and exposing \"Care Connectivity\" device interface.");
+            do
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(guidCareConnectivityDeviceInterface);
+            } while (devicePaths.Count == 0);
+            Console.WriteLine("\n");
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
@@ -91,19 +98,19 @@ namespace wpi
                 ProgramExit(-3);
             }
             // Open the interface
-            USBDevice CareConnectivityDeviceInterface = new USBDevice(devicePath);
+            USB CareConnectivityDeviceInterface = new USB(devicePath);
 
             Console.WriteLine("\nRead Flash application version (require 1.28 <= version < 2.0)...");
             byte[] ReadVersionCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x56 }; // NOKV = Info Query
-            CareConnectivityDeviceInterface.OutputPipe.Write(ReadVersionCommand, 0, ReadVersionCommand.Length);
-            int ReadLength = CareConnectivityDeviceInterface.InputPipe.Read(Buffer);
-            CareConnectivity.parseNOKV(Buffer, ReadLength);
+            CareConnectivityDeviceInterface.WritePipe(ReadVersionCommand, 0, ReadVersionCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, 0, Buffer.Length, out bytesRead);
+            CareConnectivity.parseNOKV(Buffer, (int)bytesRead);
 
             Console.WriteLine("\nRead eMMC manufacturer (Samsung = risk of locking eMMC in read-only mode)...");
             byte[] ReadEmmcCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x46, 0x52, 0x00, 0x43, 0x49, 0x44, 0x00 }; // NOKXFR\0CID\0 
-            CareConnectivityDeviceInterface.OutputPipe.Write(ReadEmmcCommand, 0, ReadEmmcCommand.Length);
-            ReadLength = CareConnectivityDeviceInterface.InputPipe.Read(Buffer);
-            CareConnectivity.parseNOKXFRCID(Buffer, ReadLength);
+            CareConnectivityDeviceInterface.WritePipe(ReadEmmcCommand, 0, ReadEmmcCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, 0, Buffer.Length, out bytesRead);
+            CareConnectivity.parseNOKXFRCID(Buffer, (int)bytesRead);
 
 
             Console.WriteLine("\nPress [Enter] to switch to \"bootloader\" mode.");
@@ -113,7 +120,7 @@ namespace wpi
             // It will reboot in "bootloader" mode.
             // (then, after a timeout, the phone automatically continues to "normal" mode)
             byte[] RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR = Reboot
-            CareConnectivityDeviceInterface.OutputPipe.Write(RebootCommand, 0, RebootCommand.Length);
+            CareConnectivityDeviceInterface.WritePipe(RebootCommand, 0, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
             Console.WriteLine("\nLook for a phone connected on a USB port");
@@ -124,7 +131,7 @@ namespace wpi
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(guidCareConnectivityDeviceInterface);
             } while (devicePaths.Count == 0);
-            Console.WriteLine("");
+            Console.WriteLine("\n");
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
@@ -141,19 +148,19 @@ namespace wpi
                 ProgramExit(-3);
             }
             // Open the interface
-            CareConnectivityDeviceInterface = new USBDevice(devicePath);
+            CareConnectivityDeviceInterface = new USB(devicePath);
 
             Console.WriteLine("\nRead BootManager version...");
             ReadVersionCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x56 }; // NOKV = Info Query
-            CareConnectivityDeviceInterface.OutputPipe.Write(ReadVersionCommand, 0, ReadVersionCommand.Length);
-            ReadLength = CareConnectivityDeviceInterface.InputPipe.Read(Buffer);
-            CareConnectivity.parseNOKV(Buffer, ReadLength);
+            CareConnectivityDeviceInterface.WritePipe(ReadVersionCommand, 0, ReadVersionCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, 0, Buffer.Length, out bytesRead);
+            CareConnectivity.parseNOKV(Buffer, (int)bytesRead);
 
             Console.WriteLine("\nRead GUID Partition Table (GPT)...");
             byte[] ReadGPTCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x54 }; // NOKT = Read GPT
-            CareConnectivityDeviceInterface.OutputPipe.Write(ReadGPTCommand, 0, ReadGPTCommand.Length);
-            ReadLength = CareConnectivityDeviceInterface.InputPipe.Read(Buffer);
-            List<Partition> partitions = CareConnectivity.parseNOKT(Buffer, ReadLength);
+            CareConnectivityDeviceInterface.WritePipe(ReadGPTCommand, 0, ReadGPTCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, 0, Buffer.Length, out bytesRead);
+            List<Partition> partitions = CareConnectivity.parseNOKT(Buffer, (int)bytesRead);
 
             // Check first and last sectors of the partitions we are going to flash
             // because the "Lumia V1 programmer" can only flashes sectors below 0xF400
@@ -200,9 +207,12 @@ namespace wpi
                 }
             }
 
+            Console.WriteLine("\nPress [Enter] to return to \"flash\" mode.");
+            Console.ReadLine();
+
             // Go from "bootloader" mode to "flash" mode.
             byte[] RebootToFlashCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x53 }; // NOKS
-            CareConnectivityDeviceInterface.OutputPipe.Write(RebootToFlashCommand, 0, RebootToFlashCommand.Length);
+            CareConnectivityDeviceInterface.WritePipe(RebootToFlashCommand, 0, RebootToFlashCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
             Console.WriteLine("Look for a phone connected on a USB port");
@@ -224,7 +234,7 @@ namespace wpi
                 ProgramExit(-3);
             }
             // Open the interface
-            CareConnectivityDeviceInterface = new USBDevice(devicePath);
+            CareConnectivityDeviceInterface = new USB(devicePath);
 
             ProgramExit(0);
         }
