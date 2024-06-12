@@ -223,14 +223,14 @@ namespace wpi
             }
         }
 
-        public void ReadPipe(byte[] buffer, int offset, int bytesToRead, out uint bytesRead)
+        public void ReadPipe(byte[] buffer, int bytesToRead, out uint bytesRead)
         {
             bool success;
             unsafe
             {
                 fixed (byte* pBuffer = buffer)
                 {
-                    success = WinUsb_ReadPipe(_winUsbHandle, Input.PipeId, pBuffer + offset, (uint)bytesToRead,
+                    success = WinUsb_ReadPipe(_winUsbHandle, Input.PipeId, pBuffer, (uint)bytesToRead,
                                     out bytesRead, IntPtr.Zero);
                 }
             }
@@ -241,7 +241,7 @@ namespace wpi
             printRaw(buffer, (int)bytesRead);
         }
 
-        public void WritePipe(byte[] buffer, int offset, int length)
+        public void WritePipe(byte[] buffer, int length)
         {
             uint bytesWritten;
             bool success;
@@ -253,7 +253,7 @@ namespace wpi
             {
                 fixed (byte* pBuffer = buffer)
                 {
-                    success = WinUsb_WritePipe(_winUsbHandle, Output.PipeId, pBuffer + offset, (uint)length,
+                    success = WinUsb_WritePipe(_winUsbHandle, Output.PipeId, pBuffer, (uint)length,
                             out bytesWritten, IntPtr.Zero);
                 }
             }

@@ -51,11 +51,11 @@ namespace wpi
             // Send command to reboot in flash mode
             string Request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"SetDeviceMode\",\"params\":{\"DeviceMode\":\"Flash\",\"ResetMethod\":\"HwReset\",\"MessageVersion\":0}}";
             byte[] OutBuffer = System.Text.Encoding.ASCII.GetBytes(Request);
-            ApolloDeviceInterface.WritePipe(OutBuffer, 0, OutBuffer.Length);
+            ApolloDeviceInterface.WritePipe(OutBuffer, OutBuffer.Length);
 
             uint bytesRead;
             byte[] Buffer = new byte[0x8000];
-            ApolloDeviceInterface.ReadPipe(Buffer, 0 , Buffer.Length, out bytesRead);
+            ApolloDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             string resultString = System.Text.ASCIIEncoding.ASCII.GetString(Buffer, 0, (int)bytesRead);
             ApolloDeviceInterface.Close();
 
@@ -102,14 +102,14 @@ namespace wpi
 
             Console.WriteLine("\nRead Flash application version (require 1.28 <= version < 2.0)...");
             byte[] ReadVersionCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x56 }; // NOKV = Info Query
-            CareConnectivityDeviceInterface.WritePipe(ReadVersionCommand, 0, ReadVersionCommand.Length);
-            CareConnectivityDeviceInterface.ReadPipe(Buffer, 0, Buffer.Length, out bytesRead);
+            CareConnectivityDeviceInterface.WritePipe(ReadVersionCommand, ReadVersionCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             CareConnectivity.parseNOKV(Buffer, (int)bytesRead);
 
             Console.WriteLine("\nRead eMMC manufacturer (Samsung = risk of locking eMMC in read-only mode)...");
             byte[] ReadEmmcCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x46, 0x52, 0x00, 0x43, 0x49, 0x44, 0x00 }; // NOKXFR\0CID\0 
-            CareConnectivityDeviceInterface.WritePipe(ReadEmmcCommand, 0, ReadEmmcCommand.Length);
-            CareConnectivityDeviceInterface.ReadPipe(Buffer, 0, Buffer.Length, out bytesRead);
+            CareConnectivityDeviceInterface.WritePipe(ReadEmmcCommand, ReadEmmcCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             CareConnectivity.parseNOKXFRCID(Buffer, (int)bytesRead);
 
 
@@ -120,7 +120,7 @@ namespace wpi
             // It will reboot in "bootloader" mode.
             // (then, after a timeout, the phone automatically continues to "normal" mode)
             byte[] RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR = Reboot
-            CareConnectivityDeviceInterface.WritePipe(RebootCommand, 0, RebootCommand.Length);
+            CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
             Console.WriteLine("\nLook for a phone connected on a USB port");
@@ -152,15 +152,31 @@ namespace wpi
 
             Console.WriteLine("\nRead BootManager version...");
             ReadVersionCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x56 }; // NOKV = Info Query
-            CareConnectivityDeviceInterface.WritePipe(ReadVersionCommand, 0, ReadVersionCommand.Length);
-            CareConnectivityDeviceInterface.ReadPipe(Buffer, 0, Buffer.Length, out bytesRead);
+            CareConnectivityDeviceInterface.WritePipe(ReadVersionCommand, ReadVersionCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             CareConnectivity.parseNOKV(Buffer, (int)bytesRead);
 
             Console.WriteLine("\nRead GUID Partition Table (GPT)...");
             byte[] ReadGPTCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x54 }; // NOKT = Read GPT
-            CareConnectivityDeviceInterface.WritePipe(ReadGPTCommand, 0, ReadGPTCommand.Length);
-            CareConnectivityDeviceInterface.ReadPipe(Buffer, 0, Buffer.Length, out bytesRead);
+            CareConnectivityDeviceInterface.WritePipe(ReadGPTCommand, ReadGPTCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             List<Partition> partitions = CareConnectivity.parseNOKT(Buffer, (int)bytesRead);
+
+            // Check if the bootloader of the phone is already unlocked
+            // We test the presence of a partition named "HACK"
+            foreach (Partition partition in partitions)
+            {
+                if ("HACK".Equals(partition.name))
+                {
+                    Console.WriteLine("**** Bootloader is already unlocked ****");
+                    Console.WriteLine("Continue booting in \"normal\" mode.");
+                    byte[] ContinueBootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x43, 0x42, 0x57 }; // NOKXCBW : Continue Boot command (Common Extended Message)
+                    CareConnectivityDeviceInterface.WritePipe(ContinueBootCommand, ContinueBootCommand.Length);
+                    CareConnectivityDeviceInterface.Close();
+                    ProgramExit(-4);
+                }
+            }
+
 
             // Check first and last sectors of the partitions we are going to flash
             // because the "Lumia V1 programmer" can only flashes sectors below 0xF400
@@ -212,7 +228,7 @@ namespace wpi
 
             // Go from "bootloader" mode to "flash" mode.
             byte[] RebootToFlashCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x53 }; // NOKS
-            CareConnectivityDeviceInterface.WritePipe(RebootToFlashCommand, 0, RebootToFlashCommand.Length);
+            CareConnectivityDeviceInterface.WritePipe(RebootToFlashCommand, RebootToFlashCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
             Console.WriteLine("Look for a phone connected on a USB port");
@@ -235,6 +251,15 @@ namespace wpi
             }
             // Open the interface
             CareConnectivityDeviceInterface = new USB(devicePath);
+
+            // We need a signed FFU (Full Flash Update).
+            Console.Write("\nInput path of FFU file:");
+            string ffuPath = Console.ReadLine();
+            // Check the validity of the FFU file
+            if (!FFU.checkFile(ffuPath))
+            {
+                ProgramExit(-5);
+            }
 
             ProgramExit(0);
         }
