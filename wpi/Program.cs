@@ -54,7 +54,7 @@ namespace wpi
             ApolloDeviceInterface.WritePipe(OutBuffer, OutBuffer.Length);
 
             uint bytesRead;
-            byte[] Buffer = new byte[0x8000];
+            byte[] Buffer = new byte[0x8000]; // Must be large enough to contain the GPT (see later)
             ApolloDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             string resultString = System.Text.ASCIIEncoding.ASCII.GetString(Buffer, 0, (int)bytesRead);
             ApolloDeviceInterface.Close();
