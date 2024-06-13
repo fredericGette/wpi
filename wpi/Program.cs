@@ -13,6 +13,20 @@ namespace wpi
 
         static void Main(string[] args)
         {
+            // We need a signed FFU (Full Flash Update).
+            Console.Write("\nInput path of FFU file:");
+            string ffuPath = Console.ReadLine();
+            // Check the validity of the FFU file
+            if (!FFU.checkFile(ffuPath))
+            {
+                ProgramExit(-5);
+            }
+
+            FFU ffu = new FFU(ffuPath);
+            byte[] ffuSBL1 = ffu.GetPartition("SBL1");
+            // Get Root Hash Key (RHK) contained in SBL1 for later check.
+            Qualcomm.parseSBL1(ffuSBL1);
+
             // Look for a phone connected on a USB port and exposing interface
             // - known as "Apollo" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
             // - known as "New Combi" interface in WPInternals
@@ -112,6 +126,13 @@ namespace wpi
             CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             CareConnectivity.parseNOKXFRCID(Buffer, (int)bytesRead);
 
+            // Check if the Root Key Hash (RKH) of the phone matches the one of the FFU (contained in partition SBL1)
+            Console.WriteLine("\nRead Root Key Hash of the phone...");
+            byte[] ReadRKHCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x46, 0x52, 0x00, 0x52, 0x52, 0x4B, 0x48 }; // NOKXFR\0RRKH 
+            CareConnectivityDeviceInterface.WritePipe(ReadRKHCommand, ReadRKHCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+            CareConnectivity.parseNOKXFRRRKH(Buffer, (int)bytesRead);
+            // TODO
 
             Console.WriteLine("\nPress [Enter] to switch to \"bootloader\" mode.");
             Console.ReadLine();
@@ -160,11 +181,11 @@ namespace wpi
             byte[] ReadGPTCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x54 }; // NOKT = Read GPT
             CareConnectivityDeviceInterface.WritePipe(ReadGPTCommand, ReadGPTCommand.Length);
             CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
-            List<Partition> partitions = CareConnectivity.parseNOKT(Buffer, (int)bytesRead);
+            List<Partition> phonePartitions = CareConnectivity.parseNOKT(Buffer, (int)bytesRead);
 
             // Check if the bootloader of the phone is already unlocked
             // We test the presence of a partition named "HACK"
-            foreach (Partition partition in partitions)
+            foreach (Partition partition in phonePartitions)
             {
                 if ("HACK".Equals(partition.name))
                 {
@@ -187,7 +208,7 @@ namespace wpi
             foreach (string RevisePartitionName in RevisePartitions)
             {
                 Partition RevisePartition = null;
-                foreach (Partition partition in partitions)
+                foreach (Partition partition in phonePartitions)
                 {
                     if (partition.name.Equals(RevisePartitionName))
                     {
@@ -195,7 +216,7 @@ namespace wpi
                     }
                 }
                 Partition ReviseBackupPartition = null;
-                foreach (Partition partition in partitions)
+                foreach (Partition partition in phonePartitions)
                 {
                     if (partition.name.Equals("BACKUP_" + RevisePartitionName))
                     {
@@ -223,7 +244,8 @@ namespace wpi
                 }
             }
 
-            Console.WriteLine("\nPress [Enter] to return to \"flash\" mode.");
+            Console.WriteLine("\nPress [Enter] to return to \"flash\" mode and start flashing the phone.");
+            Console.WriteLine("Be quick because the phone will not stay long in \"bootloader\" mode.");
             Console.ReadLine();
 
             // Go from "bootloader" mode to "flash" mode.
@@ -252,14 +274,11 @@ namespace wpi
             // Open the interface
             CareConnectivityDeviceInterface = new USB(devicePath);
 
-            // We need a signed FFU (Full Flash Update).
-            Console.Write("\nInput path of FFU file:");
-            string ffuPath = Console.ReadLine();
-            // Check the validity of the FFU file
-            if (!FFU.checkFile(ffuPath))
-            {
-                ProgramExit(-5);
-            }
+
+
+
+            
+
 
             ProgramExit(0);
         }
