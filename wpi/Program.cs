@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Linq;
 
 namespace wpi
 {
@@ -21,11 +22,80 @@ namespace wpi
             {
                 ProgramExit(-5);
             }
-
             FFU ffu = new FFU(ffuPath);
-            byte[] ffuSBL1 = ffu.GetPartition("SBL1");
+
             // Get Root Hash Key (RHK) contained in SBL1 for later check.
-            Qualcomm.parseSBL1(ffuSBL1);
+            byte[] ffuSBL1 = ffu.GetPartition("SBL1");
+            byte[] ffuRKH = Qualcomm.parseSBL1(ffuSBL1);
+            if (ffuRKH == null)
+            {
+                Console.WriteLine("Unable to extract Root Key Hash (RKH) from the SBL1 partition of the FFU file.");
+                ProgramExit(-5);
+            }
+
+            // Prepare a patched SBL2 that will be flashed in the phone
+            // Replace 0x28, 0x00, 0xD0, 0xE5 : ldrb r0, [r0, #0x28]
+            // By      0x00, 0x00, 0xA0, 0xE3 : mov r0, #0
+            byte[] ffuSBL2 = ffu.GetPartition("SBL2");
+            byte[] patternToPatch = new byte[] { 0xE3, 0x01, 0x0E, 0x42, 0xE3, 0x28, 0x00, 0xD0, 0xE5, 0x1E, 0xFF, 0x2F, 0xE1 };
+            int patternPosition = -1;
+            for (int i=0; i<ffuSBL2.Length; i++)
+            {
+                if (ffuSBL2.Skip(i).Take(patternToPatch.Length).SequenceEqual(patternToPatch))
+                {
+                    patternPosition = i;
+                    break;
+                }
+            }
+            if (patternPosition == -1)
+            {
+                Console.WriteLine("Unable to find the pattern to patch in the SBL2 partition of the FFU file.");
+                ProgramExit(-5);
+            }
+            System.Buffer.BlockCopy(new byte[] { 0x00, 0x00, 0xA0, 0xE3 }, 0, ffuSBL2, patternPosition + 5, 4);
+
+            // Prepare the content of the "HACK" partition that is going to replace the last sector of the SBL1 partition.
+            Console.WriteLine("\nGenerate the content of the \"HACK\" partition...");
+            byte[] hackPartitionContent = Qualcomm.createHACK(ffuSBL1, ffuSBL2);
+
+            // We need a "engeeniring" SBL3 to enable "Mass Storage" mode (it will be required to patch windows files)
+            Console.Write("\nInput path of the raw image of an engeeniring SBL3:");
+            string engeeniringSBL3Path = Console.ReadLine();
+            Console.WriteLine("Processing...");
+            byte[] engeeniringSBL3 = Qualcomm.loadSBL3img(engeeniringSBL3Path);
+            if (engeeniringSBL3 == null)
+            {
+                Console.WriteLine("Unable to read the raw image of an engeeniring SBL3.");
+                ProgramExit(-5);
+            }
+
+            // Check the size of the "engeeniring" SBL3
+            byte[] ffuSBL3 = ffu.GetPartition("SBL3");
+            if (engeeniringSBL3.Length > ffuSBL3.Length)
+            {
+                Console.WriteLine("The engeeniring SBL3 is too large ({0} bytes instead of {1} bytes).", engeeniringSBL3.Length, ffuSBL3.Length);
+                ProgramExit(-5);
+            }
+
+            // Prepare a patched "engeeniring" SBL3 that will be flashed in the phone
+            // Replace 0x28, 0x00, 0xD0, 0xE5 : ldrb r0, [r0, #0x28]
+            // By      0x00, 0x00, 0xA0, 0xE3 : mov r0, #0
+            patternToPatch = new byte[] { 0x04, 0x00, 0x9F, 0xE5, 0x28, 0x00, 0xD0, 0xE5, 0x1E, 0xFF, 0x2F, 0xE1 };
+            patternPosition = -1;
+            for (int i = 0; i < engeeniringSBL3.Length; i++)
+            {
+                if (engeeniringSBL3.Skip(i).Take(patternToPatch.Length).SequenceEqual(patternToPatch))
+                {
+                    patternPosition = i;
+                    break;
+                }
+            }
+            if (patternPosition == -1)
+            {
+                Console.WriteLine("Unable to find the pattern to patch in the engeeniring SBL3 partition.");
+                ProgramExit(-5);
+            }
+            System.Buffer.BlockCopy(new byte[] { 0x00, 0x00, 0xA0, 0xE3 }, 0, engeeniringSBL3, patternPosition + 4, 4); 
 
             // Look for a phone connected on a USB port and exposing interface
             // - known as "Apollo" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
@@ -33,7 +103,7 @@ namespace wpi
             // This interface allows to send jsonRPC (Remote Procedure Call) (to reboot the phone in flash mode for example).
             // Only a phone in "normal" mode exposes this interface. 
             Guid guidApolloDeviceInterface = new Guid(GUID_APOLLO_DEVICE_INTERFACE);
-            Console.WriteLine("Look for a phone connected on a USB port");
+            Console.WriteLine("\nLook for a phone connected on a USB port");
             Console.WriteLine("and exposing \"Apollo\" device interface ( = \"normal\" mode )...\n");
             List<string> devicePaths = USB.FindDevicePathsFromGuid(guidApolloDeviceInterface);
             string devicePath;
@@ -131,8 +201,12 @@ namespace wpi
             byte[] ReadRKHCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x46, 0x52, 0x00, 0x52, 0x52, 0x4B, 0x48 }; // NOKXFR\0RRKH 
             CareConnectivityDeviceInterface.WritePipe(ReadRKHCommand, ReadRKHCommand.Length);
             CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
-            CareConnectivity.parseNOKXFRRRKH(Buffer, (int)bytesRead);
-            // TODO
+            byte[] phoneRKH = CareConnectivity.parseNOKXFRRRKH(Buffer, (int)bytesRead);
+            if (!ffuRKH.SequenceEqual(phoneRKH))
+            {
+                Console.WriteLine("The Root Key Hash (RKH) of the phone doesn't match the one of the FFU file.");
+                ProgramExit(-6);
+            }
 
             Console.WriteLine("\nPress [Enter] to switch to \"bootloader\" mode.");
             Console.ReadLine();
@@ -244,6 +318,35 @@ namespace wpi
                 }
             }
 
+            // Prepare the modification of the GPT 
+            // We replace the last sector of the SBL1 partition by a new partition named "HACK"
+            // This partition has the same property (GUID, type GUID, attributes) as the SBL2 partition
+            // And we mask the GUID and type GUID of the real SBL2 partition.
+            Partition SBL1 = null;
+            Partition SBL2 = null;
+            foreach (Partition partition in phonePartitions)
+            {
+                if ("SBL1".Equals(partition.name))
+                {
+                    SBL1 = partition;
+                }
+                else if ("SBL2".Equals(partition.name))
+                {
+                    SBL2 = partition;
+                }
+            }
+            Partition HackPartition = new Partition();
+            HackPartition.name = "HACK";
+            HackPartition.attributes = SBL2.attributes;
+            HackPartition.firstSector = SBL1.lastSector;
+            HackPartition.lastSector = SBL1.lastSector;
+            HackPartition.partitionTypeGuid = SBL2.partitionTypeGuid;
+            HackPartition.partitionGuid = SBL2.partitionGuid;
+            phonePartitions.Add(HackPartition);
+            SBL1.lastSector = SBL1.lastSector-1;
+            SBL2.partitionTypeGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
+            SBL2.partitionGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
+
             Console.WriteLine("\nPress [Enter] to return to \"flash\" mode and start flashing the phone.");
             Console.WriteLine("Be quick because the phone will not stay long in \"bootloader\" mode.");
             Console.ReadLine();
@@ -273,12 +376,6 @@ namespace wpi
             }
             // Open the interface
             CareConnectivityDeviceInterface = new USB(devicePath);
-
-
-
-
-            
-
 
             ProgramExit(0);
         }

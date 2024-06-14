@@ -190,12 +190,12 @@ namespace wpi
             return partitions;
         }
 
-        public static void parseNOKXFRRRKH(byte[] values, int length)
+        public static byte[] parseNOKXFRRRKH(byte[] values, int length)
         {
             if (length < 48) // header + RKH (32 bytes)
             {
                 Console.WriteLine("Response too short.");
-                return;
+                return null;
             }
 
             // First 4 values must be NOKX
@@ -203,19 +203,21 @@ namespace wpi
             if (!isNOKX)
             {
                 Console.WriteLine("Not NOKX response.");
-                return;
+                return null;
             }
 
             // values[16] indicates the size of the response
             // It should be 32 in our case
             byte[] rkh = values.Skip(16).Take(values[16]).ToArray();
 
-            Console.Write("Phone Root Hash Key ({0} bytes): ", rkh.Length);
+            Console.Write("Phone Root Hash Key ({0} bits): ", rkh.Length*8);
             for (int i=0; i<rkh.Length; i++)
             {
                 Console.Write("{0:X2}", rkh[i]);
             }
             Console.WriteLine("");
+
+            return rkh;
         }
     }
 }
