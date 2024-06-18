@@ -374,6 +374,8 @@ namespace wpi
          * in HDLC (High-level Data Link Control)
          * to communicate whith the PBL (Primary Boot Loader)
          * in EDL (Emergency DownLoad) mode.
+         * see https://xdaforums.com/t/r-d-qualcomm-using-qdl-ehostdl-and-diag-interfaces-features.2086142/post-36371804
+         * see https://github.com/openpst/libopenpst/blob/master/include%2Fqualcomm%2Fdload.h
          */
         public static byte[] encodeHDLC(byte[] value, int length)
         {
