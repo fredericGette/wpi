@@ -208,7 +208,7 @@ namespace wpi
 
             // values[16] indicates the size of the response
             // It should be 32 in our case
-            byte[] rkh = values.Skip(16).Take(values[16]).ToArray();
+            byte[] rkh = values.Skip(17).Take(values[16]).ToArray();
 
             Console.Write("Phone Root Hash Key ({0} bits): ", rkh.Length*8);
             for (int i=0; i<rkh.Length; i++)

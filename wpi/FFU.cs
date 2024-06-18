@@ -280,5 +280,16 @@ namespace wpi
 
             return correct;
         }
+
+        public byte[] getCombinedHeader()
+        {
+            ulong combinedFFUHeaderSize = HeaderSize; // SecurityHeader + ImageHeader + StoreHeader
+            byte[] FfuHeader = new byte[combinedFFUHeaderSize];
+            OpenFile();
+            FFUFile.Read(FfuHeader, 0, (int)combinedFFUHeaderSize);
+            CloseFile();
+
+            return FfuHeader;
+        }
     }
 }

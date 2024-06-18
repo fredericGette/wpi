@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Linq;
+using System.IO;
 
 namespace wpi
 {
@@ -9,13 +10,15 @@ namespace wpi
     {
         private static string GUID_APOLLO_DEVICE_INTERFACE = "{7EAFF726-34CC-4204-B09D-F95471B873CF}";
         private static string GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE = "{0FD3B15C-D457-45D8-A779-C2B2C9F9D0FD}";
+        private static string GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE = "{71DE994D-8B7C-43DB-A27E-2AE7CD579A0C}";
         private static string VID_PID_NOKIA_LUMIA_NORMAL_MODE = "VID_0421&PID_0661";
         private static string VID_PID_NOKIA_LUMIA_UEFI_MODE = "VID_0421&PID_066E";
+        private static string VID_PID_NOKIA_LUMIA_EMERGENCY_MODE = "VID_05C6&PID_9008";
 
         static void Main(string[] args)
         {
             // We need a signed FFU (Full Flash Update).
-            Console.Write("\nInput path of FFU file:");
+            Console.Write("\nPath of FFU file (.ffu) :");
             string ffuPath = Console.ReadLine();
             // Check the validity of the FFU file
             if (!FFU.checkFile(ffuPath))
@@ -26,7 +29,8 @@ namespace wpi
 
             // Get Root Hash Key (RHK) contained in SBL1 for later check.
             byte[] ffuSBL1 = ffu.GetPartition("SBL1");
-            byte[] ffuRKH = Qualcomm.parseSBL1(ffuSBL1);
+            Console.WriteLine("Parse SBL1...");
+            byte[] ffuRKH = Qualcomm.parseSBL1orProgrammer(ffuSBL1, 0x2800); // Offset in case of SBL1 partition.
             if (ffuRKH == null)
             {
                 Console.WriteLine("Unable to extract Root Key Hash (RKH) from the SBL1 partition of the FFU file.");
@@ -36,11 +40,13 @@ namespace wpi
             // Prepare a patched SBL2 that will be flashed in the phone
             // Replace 0x28, 0x00, 0xD0, 0xE5 : ldrb r0, [r0, #0x28]
             // By      0x00, 0x00, 0xA0, 0xE3 : mov r0, #0
+            Console.Write("\nPrepare a patched version of the SBL2 partition");
             byte[] ffuSBL2 = ffu.GetPartition("SBL2");
             byte[] patternToPatch = new byte[] { 0xE3, 0x01, 0x0E, 0x42, 0xE3, 0x28, 0x00, 0xD0, 0xE5, 0x1E, 0xFF, 0x2F, 0xE1 };
             int patternPosition = -1;
             for (int i=0; i<ffuSBL2.Length; i++)
             {
+                if (i % 1000 == 0) Console.Write("."); // Progress bar
                 if (ffuSBL2.Skip(i).Take(patternToPatch.Length).SequenceEqual(patternToPatch))
                 {
                     patternPosition = i;
@@ -49,19 +55,18 @@ namespace wpi
             }
             if (patternPosition == -1)
             {
-                Console.WriteLine("Unable to find the pattern to patch in the SBL2 partition of the FFU file.");
+                Console.WriteLine("\nUnable to find the pattern to patch in the SBL2 partition of the FFU file.");
                 ProgramExit(-5);
             }
             System.Buffer.BlockCopy(new byte[] { 0x00, 0x00, 0xA0, 0xE3 }, 0, ffuSBL2, patternPosition + 5, 4);
 
             // Prepare the content of the "HACK" partition that is going to replace the last sector of the SBL1 partition.
-            Console.WriteLine("\nGenerate the content of the \"HACK\" partition...");
+            Console.Write("\nGenerate the content of the \"HACK\" partition");
             byte[] hackPartitionContent = Qualcomm.createHACK(ffuSBL1, ffuSBL2);
 
             // We need a "engeeniring" SBL3 to enable "Mass Storage" mode (it will be required to patch windows files)
-            Console.Write("\nInput path of the raw image of an engeeniring SBL3:");
+            Console.Write("\nPath of the raw image of an engeeniring SBL3 (.bin) :");
             string engeeniringSBL3Path = Console.ReadLine();
-            Console.WriteLine("Processing...");
             byte[] engeeniringSBL3 = Qualcomm.loadSBL3img(engeeniringSBL3Path);
             if (engeeniringSBL3 == null)
             {
@@ -77,6 +82,7 @@ namespace wpi
                 ProgramExit(-5);
             }
 
+            Console.Write("\nPrepare a patched version of the SBL3 partition");
             // Prepare a patched "engeeniring" SBL3 that will be flashed in the phone
             // Replace 0x28, 0x00, 0xD0, 0xE5 : ldrb r0, [r0, #0x28]
             // By      0x00, 0x00, 0xA0, 0xE3 : mov r0, #0
@@ -84,6 +90,8 @@ namespace wpi
             patternPosition = -1;
             for (int i = 0; i < engeeniringSBL3.Length; i++)
             {
+                if (i % 1000 == 0) Console.Write("."); // Progress bar
+
                 if (engeeniringSBL3.Skip(i).Take(patternToPatch.Length).SequenceEqual(patternToPatch))
                 {
                     patternPosition = i;
@@ -92,10 +100,49 @@ namespace wpi
             }
             if (patternPosition == -1)
             {
-                Console.WriteLine("Unable to find the pattern to patch in the engeeniring SBL3 partition.");
+                Console.WriteLine("\nUnable to find the pattern to patch in the engeeniring SBL3 partition.");
                 ProgramExit(-5);
             }
-            System.Buffer.BlockCopy(new byte[] { 0x00, 0x00, 0xA0, 0xE3 }, 0, engeeniringSBL3, patternPosition + 4, 4); 
+            System.Buffer.BlockCopy(new byte[] { 0x00, 0x00, 0xA0, 0xE3 }, 0, engeeniringSBL3, patternPosition + 4, 4);
+
+            //TODO prepare a patched UEFI 
+
+            // We need a "loader" (a programmer) to be able to write partitions in the eMMC in Emergency DownLoad mode (EDL mode)
+            Console.Write("\n\nPath of the emergency programmer (.hex) :");
+            string programmerFile = Console.ReadLine();
+            // Parse .hex file from "Intel HEX" format
+            byte[] programmer = Qualcomm.parseHexFile(programmerFile);
+            if (programmer == null)
+            {
+                Console.WriteLine("Unable to read the emergency programmer file.");
+                ProgramExit(-5);
+            }
+            Console.Write("Parse programmer...");
+            byte[] programmerType = new byte[] { 0x51, 0x0, 0x48, 0x0, 0x53, 0x0, 0x55, 0x0, 0x53, 0x0, 0x42, 0x0, 0x5F, 0x0, 0x41, 0x0, 0x52, 0x0, 0x4D, 0x0, 0x50, 0x0, 0x52, 0x0, 0x47, 0x0 }; //QHSUSB_ARMPRG
+            patternPosition = -1;
+            for (int i=0; i<programmer.Length; i++)
+            {
+                if (i % 1000 == 0) Console.Write("."); // Progress bar
+                if (programmer.Skip(i).Take(programmerType.Length).SequenceEqual(programmerType))
+                {
+                    patternPosition = i;
+                    break;
+                }
+            }
+            Console.WriteLine("");
+            if (patternPosition == -1)
+            {
+                Console.WriteLine("The programmer is not of type QHSUSB_ARMPRG.");
+                ProgramExit(-5);
+            }
+            byte[] programmerRKH = Qualcomm.parseSBL1orProgrammer(programmer, 0);
+            if (!ffuRKH.SequenceEqual(programmerRKH))
+            {
+                Console.WriteLine("\nThe Root Key Hash (RKH) of the programmer doesn't match the one of the FFU file.");
+                ProgramExit(-6);
+            }
+            File.WriteAllBytes("C:\\Users\\frede\\Documents\\programmer.bin", programmer);
+            Console.WriteLine("Programmer size: {0} bytes.", programmer.Length);
 
             // Look for a phone connected on a USB port and exposing interface
             // - known as "Apollo" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
@@ -107,6 +154,7 @@ namespace wpi
             Console.WriteLine("and exposing \"Apollo\" device interface ( = \"normal\" mode )...\n");
             List<string> devicePaths = USB.FindDevicePathsFromGuid(guidApolloDeviceInterface);
             string devicePath;
+            goto test;
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
@@ -347,14 +395,16 @@ namespace wpi
             SBL2.partitionTypeGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
             SBL2.partitionGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
 
-            Console.WriteLine("\nPress [Enter] to return to \"flash\" mode and start flashing the phone.");
-            Console.WriteLine("Be quick because the phone will not stay long in \"bootloader\" mode.");
-            Console.ReadLine();
+            Console.WriteLine("\nReturning to \"flash\" mode to start flashing the phone...");
 
             // Go from "bootloader" mode to "flash" mode.
             byte[] RebootToFlashCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x53 }; // NOKS
             CareConnectivityDeviceInterface.WritePipe(RebootToFlashCommand, RebootToFlashCommand.Length);
             CareConnectivityDeviceInterface.Close();
+
+            Console.WriteLine("Press [Enter] when the phone displays a big \"NOKIA\"");
+            Console.WriteLine("in the top part of the screen ( = \"flash\" mode ).");
+            Console.ReadLine();
 
             Console.WriteLine("Look for a phone connected on a USB port");
             Console.WriteLine("and exposing \"Care Connectivity\" device interface...\n");
@@ -377,6 +427,142 @@ namespace wpi
             // Open the interface
             CareConnectivityDeviceInterface = new USB(devicePath);
 
+            byte[] ReadSSCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x46, 0x52, 0x00, 0x53, 0x53, 0x00, 0x00 }; // NOKXFR\0SS\0\0
+            CareConnectivityDeviceInterface.WritePipe(ReadSSCommand, ReadSSCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+
+            byte[] nokdCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x44 }; // NOKD
+            CareConnectivityDeviceInterface.WritePipe(nokdCommand, nokdCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+
+            Console.WriteLine("\n\"Soft brick\" the phone in order to boot in EDL mode after the next reboot.");
+            // To enter Emergency DownLoad mode (EDL) we are going to erase a part of the eMMC to "brick" the phone.
+            // First, we send the header of a signed FFU file in order to start the flashing:
+            byte[] ffuHeader = ffu.getCombinedHeader();
+            byte[] secureFlashCommand = new byte[ffuHeader.Length + 32]; // command header size = 32 bytes
+            secureFlashCommand[0] = 0x4E; // N
+            secureFlashCommand[1] = 0x4F; // O
+            secureFlashCommand[2] = 0x4B; // K
+            secureFlashCommand[3] = 0x58; // X
+            secureFlashCommand[4] = 0x46; // F
+            secureFlashCommand[5] = 0x53; // S
+            secureFlashCommand[6] = 0x00; // Protocol version = 0x0001
+            secureFlashCommand[7] = 0x01;  
+            secureFlashCommand[8] = 0; // Progress = 0%
+            secureFlashCommand[11] = 1; // Subblock count = 1
+            secureFlashCommand[12] = 0x00; // Subblock type for "Header" = 0x0000000B
+            secureFlashCommand[13] = 0x00;
+            secureFlashCommand[14] = 0x00;
+            secureFlashCommand[15] = 0x0B;
+            uint subBlockLength = (uint)ffuHeader.Length + 12;
+            secureFlashCommand[16] = (byte)((subBlockLength>>24) & 0xFF);
+            secureFlashCommand[17] = (byte)((subBlockLength >> 16) & 0xFF);
+            secureFlashCommand[18] = (byte)((subBlockLength >> 8) & 0xFF);
+            secureFlashCommand[19] = (byte)(subBlockLength  & 0xFF);
+            secureFlashCommand[20] = 0x00; // Header type = 0x00000000
+            secureFlashCommand[21] = 0x00;
+            secureFlashCommand[22] = 0x00;
+            secureFlashCommand[23] = 0x00;
+            uint payloadLength = (uint)ffuHeader.Length;
+            secureFlashCommand[24] = (byte)((payloadLength >> 24) & 0xFF);
+            secureFlashCommand[25] = (byte)((payloadLength >> 16) & 0xFF);
+            secureFlashCommand[26] = (byte)((payloadLength >> 8) & 0xFF);
+            secureFlashCommand[27] = (byte)(payloadLength & 0xFF);
+            secureFlashCommand[28] = 0; // Header options = 0
+            System.Buffer.BlockCopy(ffuHeader, 0, secureFlashCommand, 32, ffuHeader.Length);
+            CareConnectivityDeviceInterface.WritePipe(secureFlashCommand, secureFlashCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+            int flashReturnCode = (int)((Buffer[6] << 8) + Buffer[7]);
+            if (flashReturnCode != 0)
+            {
+                Console.WriteLine("Flash of FFU header failed (return code 0x{0:X16})", flashReturnCode);
+                ProgramExit(-3);
+            }
+
+            // Send 1 empty chunk (according to layout in FFU headers, it will be written to first and last chunk) ?
+            // Erase the 256 first sectors (GPT ?) ?
+            byte[] EmptyChunk = new byte[0x20000];
+            Array.Clear(EmptyChunk, 0, 0x20000);
+            secureFlashCommand = new byte[ffuHeader.Length + 28]; // command header size = 28 bytes
+            secureFlashCommand[0] = 0x4E; // N
+            secureFlashCommand[1] = 0x4F; // O
+            secureFlashCommand[2] = 0x4B; // K
+            secureFlashCommand[3] = 0x58; // X
+            secureFlashCommand[4] = 0x46; // F
+            secureFlashCommand[5] = 0x53; // S
+            secureFlashCommand[6] = 0x00; // Protocol version = 0x0001
+            secureFlashCommand[7] = 0x01;
+            secureFlashCommand[8] = 0; // Progress = 0%
+            secureFlashCommand[11] = 1; // Subblock count = 1
+            secureFlashCommand[12] = 0x00; // Subblock type for "ChunkData" = 0x0000000C
+            secureFlashCommand[13] = 0x00;
+            secureFlashCommand[14] = 0x00;
+            secureFlashCommand[15] = 0x0C;
+            subBlockLength = (uint)EmptyChunk.Length + 8;
+            secureFlashCommand[16] = (byte)((subBlockLength >> 24) & 0xFF);
+            secureFlashCommand[17] = (byte)((subBlockLength >> 16) & 0xFF);
+            secureFlashCommand[18] = (byte)((subBlockLength >> 8) & 0xFF);
+            secureFlashCommand[19] = (byte)(subBlockLength & 0xFF);
+            payloadLength = (uint)EmptyChunk.Length;
+            secureFlashCommand[20] = (byte)((payloadLength >> 24) & 0xFF);
+            secureFlashCommand[21] = (byte)((payloadLength >> 16) & 0xFF);
+            secureFlashCommand[22] = (byte)((payloadLength >> 8) & 0xFF);
+            secureFlashCommand[23] = (byte)(payloadLength & 0xFF);
+            secureFlashCommand[24] = 0; // Data options = 0 (1 = verify)
+            System.Buffer.BlockCopy(EmptyChunk, 0, secureFlashCommand, 28, EmptyChunk.Length);
+            CareConnectivityDeviceInterface.WritePipe(secureFlashCommand, secureFlashCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+            flashReturnCode = (int)((Buffer[6] << 8) + Buffer[7]);
+            if (flashReturnCode != 0)
+            {
+                Console.WriteLine("Flash of FFU header failed (return code 0x{0:X16})", flashReturnCode);
+                ProgramExit(-3);
+            }
+
+            Console.WriteLine("\nPress [Enter] to reboot the phone.");
+            Console.ReadLine();
+
+            // Reboot the phone. As we "bricked" it, it will reboot in Emergency DownLoad mode (EDL)
+            RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR = Reboot
+            CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
+            CareConnectivityDeviceInterface.Close();
+
+            test:
+
+            Console.WriteLine("Look for a phone connected on a USB port");
+            Console.WriteLine("and exposing \"Lumia Emergency\" device interface...\n");
+
+            Guid guidEmergencyDeviceInterface = new Guid(GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE);
+            devicePaths = USB.FindDevicePathsFromGuid(guidEmergencyDeviceInterface);
+            if (devicePaths.Count != 1)
+            {
+                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
+                ProgramExit(-1);
+            }
+            devicePath = devicePaths[0];
+            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                // Vendor ID 0x05C6 : Qualcomm Inc.
+                // Product ID 0x066E : Qualcomm Download
+                Console.WriteLine("Incorrect VID (expecting 0x05C6) and/or incorrect PID (expecting 0x9008)");
+                ProgramExit(-3);
+            }
+            USB EmergencyDeviceInterface = new USB(devicePath);
+
+            Console.WriteLine("\nCheck communication with the phone in EDL mode...");
+            // Send DLOAD NOP command (0x06) to check we are able to communicate with the phone
+            byte[] nopCommand = Qualcomm.encodeHDLC(new byte[] { 0x06 }, 1);
+            EmergencyDeviceInterface.WritePipe(nopCommand, nopCommand.Length);
+            byte[] ResponseBuffer = new byte[0x2000];
+            EmergencyDeviceInterface.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
+            byte[] commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
+            if (commandResult.Length !=1 || commandResult[0] != 0x02)
+            {
+                Console.WriteLine("Expected DLOAD ACK (0x02) but received:");
+                printRaw(commandResult, commandResult.Length);
+            }
+
             ProgramExit(0);
         }
 
@@ -384,6 +570,48 @@ namespace wpi
         {
             Console.ReadLine();
             Environment.Exit(exitCode);
+        }
+
+        private static void printRaw(byte[] values, int length)
+        {
+            string characters = "";
+            bool truncated = false;
+            int truncatedLength = length;
+            if (truncatedLength > 190) // display at max 10 lines of values
+            {
+                truncatedLength = 190;
+                truncated = true;
+            }
+            int normalizedLength = ((truncatedLength / 19) + 1) * 19; // display 19 values by line
+            for (int i = 0; i < normalizedLength; i++)
+            {
+                if (i < length)
+                {
+                    Console.Write("{0:X2} ", values[i]);
+                    if (values[i] > 31 && values[i] < 127)
+                    {
+                        characters += (char)values[i] + "";
+                    }
+                    else
+                    {
+                        characters += ".";
+                    }
+                }
+                else
+                {
+                    Console.Write("   ");
+                }
+
+                if ((i + 1) % 19 == 0)
+                {
+                    Console.WriteLine(" {0}", characters);
+                    characters = "";
+                }
+            }
+            if (truncated)
+            {
+                Console.WriteLine("Displayed only the first {0} bytes of {1} bytes.", truncatedLength, length);
+            }
         }
 
     }

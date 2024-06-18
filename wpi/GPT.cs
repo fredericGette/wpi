@@ -64,7 +64,7 @@ namespace wpi
             }
 
             uint partitionOffset = tableOffset;
-            Console.WriteLine("\nPartition name                       firstSect. lastSect.  Attributes");
+            Console.WriteLine("\nPartition name                       firstSect. lastSect. Attributes");
             Console.WriteLine("\tPartition type GUID");
             Console.WriteLine("\tPartition GUID");
             while (partitionOffset < tableOffset + tableSize)

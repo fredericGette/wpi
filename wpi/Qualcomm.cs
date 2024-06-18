@@ -53,12 +53,12 @@ namespace wpi
             }
         }
 
-        public static byte[] parseSBL1(byte[] values)
+        public static byte[] parseSBL1orProgrammer(byte[] values, uint Offset)
         {
-            uint Offset = 0x2800; // Offset in case of SBL1 partition.
-
             // Check we have a "Long Header"
-            byte[] LongHeaderStart = new byte[] { 0xD1, 0xDC, 0x4B, 0x84, 0x34, 0x10, 0xD7, 0x73};
+            // - CodeWord (4 bytes)
+            // - Magic (4 bytes)
+            byte[] LongHeaderStart = new byte[] { 0xD1, 0xDC, 0x4B, 0x84, 0x34, 0x10, 0xD7, 0x73 };
             byte[] LongHeaderEnd = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
             byte[] headerStart = values.Skip((int)Offset).Take(LongHeaderStart.Length).ToArray();
             if (!headerStart.SequenceEqual(LongHeaderStart))
@@ -77,10 +77,22 @@ namespace wpi
                 return null;
             }
 
+            byte imageType = values[Offset + 8];
+            if (imageType == 0x0D)
+            {
+                Console.WriteLine("EhostDL image detected."); // Emergency Host Download 
+            }
+
+
             uint HeaderOffset = Offset + 20; // total size of "Long Header"
             uint ImageOffset = values[HeaderOffset] + (uint)(values[HeaderOffset + 1] << 8) + (uint)(values[HeaderOffset + 2] << 16) + (uint)(values[HeaderOffset + 2] << 24);
+            Console.WriteLine("Image offset = 0x{0:X8} ", ImageOffset);
 
             uint ImageAddress = values[HeaderOffset + 4] + (uint)(values[HeaderOffset + 5] << 8) + (uint)(values[HeaderOffset + 6] << 16) + (uint)(values[HeaderOffset + 7] << 24);
+            Console.WriteLine("Image address = 0x{0:X8} ", ImageAddress);
+            // To disassemble the binary, use the ImageAddress-ImageOffset to rebase the code
+            // then ImageAddress is the entry point.
+
             uint CertificatesAddress = values[HeaderOffset + 24] + (uint)(values[HeaderOffset + 25] << 8) + (uint)(values[HeaderOffset + 26] << 16) + (uint)(values[HeaderOffset + 27] << 24);
             uint CertificatesSize = values[HeaderOffset + 28] + (uint)(values[HeaderOffset + 29] << 8) + (uint)(values[HeaderOffset + 30] << 16) + (uint)(values[HeaderOffset + 31] << 24);
             uint CertificatesOffset = CertificatesAddress - ImageAddress + ImageOffset;
@@ -99,7 +111,7 @@ namespace wpi
                         // This is the last certificate. So this is the root key.
                         RootKeyHash = new SHA256Managed().ComputeHash(values, (int)CurrentCertificateOffset, (int)CertificateSize);
 
-                        Console.Write("SBL1 Root Hash Key ({0} bits): ", RootKeyHash.Length*8);
+                        Console.WriteLine("Root Hash Key ({0} bits): ", RootKeyHash.Length * 8);
                         for (int i = 0; i < RootKeyHash.Length; i++)
                         {
                             Console.Write("{0:X2}", RootKeyHash[i]);
@@ -117,7 +129,7 @@ namespace wpi
                         // This is the last certificate. So this is the root key.
                         RootKeyHash = new SHA256Managed().ComputeHash(values, (int)CurrentCertificateOffset, (int)CertificateSize);
 
-                        Console.Write("SBL1 Root Hash Key ({0} bits): ", RootKeyHash.Length*8);
+                        Console.WriteLine("Root Hash Key ({0} bits): ", RootKeyHash.Length * 8);
                         for (int i = 0; i < RootKeyHash.Length; i++)
                         {
                             Console.Write("{0:X2}", RootKeyHash[i]);
@@ -132,10 +144,6 @@ namespace wpi
 
         public static byte[] createHACK(byte[] sbl1, byte[] sbl2)
         {
-            // Copy the header of the SBL2 partition
-            //byte[] sbl2Header = new byte[12];
-            //Buffer.BlockCopy(sbl2, 0, sbl2Header, 0, sbl2Header.Length);
-
             // Find the position of the PartitionLoaderTable inside SBL1
             byte[] patternToFind = new byte[] {
                 0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -145,6 +153,8 @@ namespace wpi
             int patternPosition = -1;
             for (int i = 0; i < sbl1.Length; i++)
             {
+                if (i % 1000 == 0) Console.Write("."); // Progress bar
+
                 if (sbl1.Skip(i).Take(patternToFind.Length).SequenceEqual(patternToFind))
                 {
                     patternPosition = i;
@@ -153,11 +163,11 @@ namespace wpi
             }
             if (patternPosition == -1)
             {
-                Console.WriteLine("Unable to find the pattern of the PartitionLoaderTable in the SBL1 partition of the FFU file.");
+                Console.WriteLine("\nUnable to find the pattern of the PartitionLoaderTable in the SBL1 partition of the FFU file.");
                 return null;
             }
             uint PartitionLoaderTableOffset = (uint)patternPosition;
-            Console.WriteLine("SBL1 PartitionLoaderTableOffset = 0x{0:X8}", PartitionLoaderTableOffset);
+            Console.WriteLine("\nSBL1 PartitionLoaderTableOffset = 0x{0:X8}", PartitionLoaderTableOffset);
 
             // Find the position of the SharedMemoryAddress inside SBL1
             patternToFind = new byte[] { 0x04, 0x00, 0x9F, 0xE5, 0x28, 0x00, 0xD0, 0xE5, 0x1E, 0xFF, 0x2F, 0xE1 };
@@ -304,6 +314,149 @@ namespace wpi
 
             return sbl3;
 
+        }
+
+        public static byte[] parseHexFile(string FilePath)
+        {
+            byte[] Result = null;
+
+            string[] Lines = File.ReadAllLines(FilePath);
+            byte[] Buffer = null;
+            int BufferSize = 0;
+
+            foreach (string Line in Lines)
+            {
+                if (Line[0] != ':')
+                {
+                    Console.WriteLine("Line doesn't start with a \":\" character:\n{0}", Line);
+                    return null;
+                }
+
+                string hexString = Line.Substring(1); // remove the : at the start of the line
+
+                if (hexString.Length % 2 == 1)
+                {
+                    Console.WriteLine("The line contains an odd number of digits:\n{0}", Line);
+                    return null;
+                }
+
+                byte[] LineBytes = new byte[hexString.Length / 2]; // Each byte is coded by 2 digits
+                for (int i = 0; i < LineBytes.Length; ++i)
+                {
+                    string hexValue = hexString.Substring(i * 2, 2);
+                    LineBytes[i] = Convert.ToByte(hexValue, 16);
+                }
+
+                if ((LineBytes[0] + 5) != LineBytes.Length)
+                {
+                    Console.WriteLine("The number of bytes in the line is not correct (size={0}, expected={1}):\n{2}", LineBytes.Length, (LineBytes[0] + 5), Line);
+                    return null;
+                }
+
+                if (Buffer == null)
+                    Buffer = new byte[0x40000]; // Should be enough ?
+
+                if (LineBytes[3] == 0) // record type = data
+                {
+                    System.Buffer.BlockCopy(LineBytes, 4, Buffer, BufferSize, LineBytes[0]); // Line header size = 4 bytes, line trailer (checksum) = 1 byte
+                    BufferSize += LineBytes[0];
+                }
+            }
+
+            Result = new byte[BufferSize];
+            System.Buffer.BlockCopy(Buffer, 0, Result, 0, BufferSize);
+
+            return Result;
+        }
+
+        /**
+         * Encode a DLOAD command 
+         * in HDLC (High-level Data Link Control)
+         * to communicate whith the PBL (Primary Boot Loader)
+         * in EDL (Emergency DownLoad) mode.
+         */
+        public static byte[] encodeHDLC(byte[] value, int length)
+        {
+            CRC16 crc16 = new CRC16(0x1189, 0xFFFF, 0xFFFF);
+
+            byte[] encoded = new byte[(length * 2) + 4]; // Header (1byte) + value (each byte can be escaped by one other byte) + CRC16 (2 bytes) + Trailer (1byte)
+            int index = 0;
+
+            encoded[index++] = 0x7E; // Header
+
+            // Escape 0x7D and 0x7E values
+            for (int i = 0; i < length; i++)
+            {
+                if ((value[i] == 0x7D) || (value[i] == 0x7E))
+                {
+                    encoded[index++] = 0x7D;
+                    encoded[index++] = (byte)(value[i] ^ 0x20);
+                }
+                else
+                    encoded[index++] = value[i];
+            }
+
+            // Compute the 16bits CRC (Cyclic Redundancy Checks) 
+            // and escape 0x7D and 0x7E CRC values (these values can appear in the high or low byte of the CRC value)
+            UInt16 crcResult = crc16.CalculateChecksum(value);
+            if (((byte)(crcResult & 0xFF) == 0x7D) || ((byte)(crcResult & 0xFF) == 0x7E))
+            {
+                encoded[index++] = 0x7D;
+                encoded[index++] = (byte)((crcResult & 0xFF) ^ 0x20);
+            }
+            else
+                encoded[index++] = (byte)(crcResult & 0xFF);
+            if (((byte)(crcResult >> 8) == 0x7D) || ((byte)(crcResult >> 8) == 0x7E))
+            {
+                encoded[index++] = 0x7D;
+                encoded[index++] = (byte)((crcResult >> 8) ^ 0x20);
+            }
+            else
+                encoded[index++] = (byte)(crcResult >> 8);
+
+            encoded[index++] = 0x7E; // Trailer
+
+            // Resize result by removing useless trailing bytes
+            byte[] Result = new byte[index];
+            Buffer.BlockCopy(encoded, 0, Result, 0, index);
+            return Result;
+        }
+
+        public static byte[] decodeHDLC(byte[] value, int length)
+        {
+            CRC16 crc16 = new CRC16(0x1189, 0xFFFF, 0xFFFF);
+
+            int SourceLength = length;
+            int SourcePos = 1; // exclude the header byte (0x7E) at position 0
+            int index = 0;
+
+            byte[] decoded = new byte[SourceLength]; // the decoded array will be smaller than the input array because we remove the header and trailer.
+
+            while (SourcePos < SourceLength)
+            {
+                if (value[SourcePos] == 0x7E) // Trailer
+                    break;
+                if (value[SourcePos] == 0x7D) // Escape byte
+                    decoded[index++] = (byte)(value[++SourcePos] ^ 0x20);
+                else
+                    decoded[index++] = value[SourcePos];
+                SourcePos++;
+            }
+
+            // Remove the crc value (the 2 last bytes)
+            byte[] Result = new byte[index - 2];
+            Buffer.BlockCopy(decoded, 0, Result, 0, index - 2);
+
+            // Compute the 16bits CRC (Cyclic Redundancy Checks) 
+            // and compare it with the crc contained in the decoded value (last 2 bytes)
+            UInt16 crcResult = crc16.CalculateChecksum(Result);
+            if (((byte)(crcResult & 0xFF) != decoded[index - 2]) || ((byte)(crcResult >> 8) != decoded[index - 1]))
+            {
+                Console.WriteLine("The CRC16 doesn't match: expected 0x{0:X4}, received 0x{1:X4}", crcResult, (decoded[index - 2] + decoded[index - 1] << 8));
+                return null;
+            }
+
+            return Result;
         }
     }
 }
