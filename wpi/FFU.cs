@@ -26,6 +26,7 @@ namespace wpi
         internal UInt64 TotalChunkCount;
 
         internal List<Partition> partitions;
+        internal GPT gpt;
 
         internal FFU(string Path)
         {
@@ -121,7 +122,8 @@ namespace wpi
                 }
 
                 byte[] GPTBuffer = GetSectors(0x01, 0x22);
-                partitions = GPT.parse(GPTBuffer, GPTBuffer.Length);
+                gpt = new GPT(GPTBuffer, GPTBuffer.Length);
+                partitions = gpt.partitions;
 
                 HeaderSize = (UInt64)(SecurityHeaderLength + ImageHeaderLength + StoreHeader.Length);
 

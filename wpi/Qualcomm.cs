@@ -370,10 +370,9 @@ namespace wpi
         }
 
         /**
-         * Encode a DLOAD command 
+         * Encode a DMSS (Dual-Mode Subscriber Station) Download Protocol command
          * in HDLC (High-level Data Link Control)
          * to communicate whith the PBL (Primary Boot Loader)
-         * in EDL (Emergency DownLoad) mode.
          * see https://xdaforums.com/t/r-d-qualcomm-using-qdl-ehostdl-and-diag-interfaces-features.2086142/post-36371804
          * see https://github.com/openpst/libopenpst/blob/master/include%2Fqualcomm%2Fdload.h
          */
@@ -459,6 +458,113 @@ namespace wpi
             }
 
             return Result;
+        }
+
+        public static bool SendToPhoneMemory(UInt32 Address, byte[] Data, UInt32 Length, USB device)
+        {
+            long Remaining = Length;
+            UInt32 CurrentLength;
+            UInt32 CurrentOffset = 0;
+            byte[] Buffer = new byte[0x107]; // Command (1byte) + Address (4bytes) + Length (2bytes) + Data (100bytes)
+            UInt32 CurrentAddress = Address;
+            byte[] CurrentBytes;
+
+            while (Remaining > 0)
+            {
+
+                if (Remaining >= 0x100)
+                {
+                    CurrentLength = 0x100;
+                    CurrentBytes = Buffer;
+                }
+                else
+                {
+                    CurrentLength = (UInt32)Remaining;
+                    CurrentBytes = new byte[CurrentLength + 7];
+                }
+                CurrentBytes[0] = 0x0F; // DLOAD command to write data at a 32bits address
+                System.Buffer.BlockCopy(BitConverter.GetBytes(CurrentAddress).Reverse().ToArray(), 0, CurrentBytes, 1, 4); // Address is in Big Endian (4 bytes) at position 1
+                System.Buffer.BlockCopy(BitConverter.GetBytes((UInt16)CurrentLength).Reverse().ToArray(), 0, CurrentBytes, 5, 2); // Length is in Big Endian (2 bytes) at position 5
+                System.Buffer.BlockCopy(Data, (int)CurrentOffset, CurrentBytes, 7, (int)CurrentLength); // Read max 100bytes from Data at put them at position 7 in the CurrentBytes
+
+                // Send write command
+                byte[] writeCommand = Qualcomm.encodeHDLC(CurrentBytes, CurrentBytes.Length);
+                device.WritePipe(writeCommand, writeCommand.Length);
+
+                // Read response
+                uint bytesRead;
+                byte[] ResponseBuffer = new byte[0x2000]; // I don't know why we need this size.
+                device.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
+                byte[] commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
+                if (commandResult.Length != 1 || commandResult[0] != 0x02)
+                {
+                    Console.WriteLine("Expected DLOAD ACK (0x02) but received:");
+                    printRaw(commandResult, commandResult.Length);
+                    return false;
+                }
+
+                CurrentAddress += CurrentLength;
+                CurrentOffset += CurrentLength;
+                Remaining -= CurrentLength;
+            }
+
+            return true;
+        }
+
+        public static bool Flash(UInt32 StartInBytes, byte[] Data, UInt32 LengthInBytes, USB device)
+        {
+            long RemainingBytes = LengthInBytes;
+            UInt32 CurrentLength;
+            UInt32 CurrentOffset = 0;
+            byte[] Buffer = new byte[0x405]; // command (1byte) + start position (4bytes) + Data (400bytes)
+            byte[] FinalCommand;
+            Buffer[0] = 0x07; // Ehost STREAM_WRITE_REQ
+            UInt32 CurrentPosition = StartInBytes; // Position in the eMMC storage
+
+            while (RemainingBytes > 0)
+            {
+                System.Buffer.BlockCopy(BitConverter.GetBytes(CurrentPosition), 0, Buffer, 1, 4); // Start position is in bytes and in Little Endian (on Samsung phones the start position is in Sectors!!)
+
+                if (RemainingBytes >= 0x400)
+                    CurrentLength = 0x400;
+                else
+                    CurrentLength = (UInt32)RemainingBytes;
+                System.Buffer.BlockCopy(Data, (int)CurrentOffset, Buffer, 5, (int)CurrentLength);
+
+                if (CurrentLength < 0x400)
+                {
+                    FinalCommand = new byte[CurrentLength + 5];
+                    System.Buffer.BlockCopy(Buffer, 0, FinalCommand, 0, (int)CurrentLength + 5);
+                }
+                else
+                    FinalCommand = Buffer;
+
+                // Send write command
+                device.WritePipe(FinalCommand, FinalCommand.Length);
+
+                // Read response
+                uint bytesRead;
+                byte[] ResponseBuffer = new byte[0x2000]; // I don't know why we need this size.
+                device.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
+                byte[] commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
+                if (commandResult.Length < 5 || commandResult[0] != 0x08 
+                    || commandResult[1] != (byte)(CurrentPosition & 0xFF)
+                    || commandResult[2] != (byte)((CurrentPosition >> 8) & 0xFF)
+                    || commandResult[3] != (byte)((CurrentPosition >> 16) & 0xFF)
+                    || commandResult[4] != (byte)((CurrentPosition >> 24) & 0xFF)
+                    )
+                {
+                    Console.WriteLine("Expected Ehost STREAM_WRITE_RSP (0x08) and start position 0x{0:X8} but received:", CurrentPosition);
+                    printRaw(commandResult, commandResult.Length);
+                    return false;
+                }
+
+                CurrentPosition += CurrentLength;
+                CurrentOffset += CurrentLength;
+                RemainingBytes -= CurrentLength;
+            }
+
+            return true;
         }
     }
 }

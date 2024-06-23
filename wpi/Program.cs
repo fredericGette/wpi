@@ -17,6 +17,7 @@ namespace wpi
 
         static void Main(string[] args)
         {
+
             // We need a signed FFU (Full Flash Update).
             Console.Write("\nPath of FFU file (.ffu) :");
             string ffuPath = Console.ReadLine();
@@ -105,7 +106,13 @@ namespace wpi
             }
             System.Buffer.BlockCopy(new byte[] { 0x00, 0x00, 0xA0, 0xE3 }, 0, engeeniringSBL3, patternPosition + 4, 4);
 
-            //TODO prepare a patched UEFI 
+            Console.WriteLine("\n\nRead the UEFI partition.");
+            byte[] ffuUEFI = ffu.GetPartition("UEFI");
+            UEFI uefi = new UEFI(ffuUEFI);
+            Console.Write("\nPrepare a patched version of the UEFI partition.");
+            uefi.Patch();
+
+            ProgramExit(99);
 
             // We need a "loader" (a programmer) to be able to write partitions in the eMMC in Emergency DownLoad mode (EDL mode)
             Console.Write("\n\nPath of the emergency programmer (.hex) :");
@@ -144,6 +151,7 @@ namespace wpi
             File.WriteAllBytes("C:\\Users\\frede\\Documents\\programmer.bin", programmer);
             Console.WriteLine("Programmer size: {0} bytes.", programmer.Length);
 
+            //goto test1;
             // Look for a phone connected on a USB port and exposing interface
             // - known as "Apollo" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
             // - known as "New Combi" interface in WPInternals
@@ -151,16 +159,21 @@ namespace wpi
             // Only a phone in "normal" mode exposes this interface. 
             Guid guidApolloDeviceInterface = new Guid(GUID_APOLLO_DEVICE_INTERFACE);
             Console.WriteLine("\nLook for a phone connected on a USB port");
-            Console.WriteLine("and exposing \"Apollo\" device interface ( = \"normal\" mode )...\n");
-            List<string> devicePaths = USB.FindDevicePathsFromGuid(guidApolloDeviceInterface);
-            string devicePath;
-            goto test;
+            Console.Write("and exposing \"Apollo\" device interface ( = \"normal\" mode )");
+            List<string> devicePaths;
+            do
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(guidApolloDeviceInterface);
+            } while (devicePaths.Count == 0);
+            Console.WriteLine("\n");
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
                 ProgramExit(-1);
             }
-            devicePath = devicePaths[0];
+            string devicePath = devicePaths[0];
             Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
             if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_NORMAL_MODE, StringComparison.OrdinalIgnoreCase) == 0)
@@ -196,6 +209,7 @@ namespace wpi
             Console.WriteLine("in the top part of the screen ( = \"flash\" mode ).");
             Console.ReadLine();
 
+            Buffer = new byte[0x8000];
             // Look for a phone connected on a USB port and exposing interface
             // - known as "Care Connectivity" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
             // - known as "Old Combi" interface in WPInternals
@@ -303,7 +317,8 @@ namespace wpi
             byte[] ReadGPTCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x54 }; // NOKT = Read GPT
             CareConnectivityDeviceInterface.WritePipe(ReadGPTCommand, ReadGPTCommand.Length);
             CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
-            List<Partition> phonePartitions = CareConnectivity.parseNOKT(Buffer, (int)bytesRead);
+            GPT gpt = CareConnectivity.parseNOKT(Buffer, (int)bytesRead);
+            List<Partition> phonePartitions = gpt.partitions;
 
             // Check if the bootloader of the phone is already unlocked
             // We test the presence of a partition named "HACK"
@@ -406,9 +421,19 @@ namespace wpi
             Console.WriteLine("in the top part of the screen ( = \"flash\" mode ).");
             Console.ReadLine();
 
+            //test1:
+            Buffer = new byte[0x8000];
+            guidCareConnectivityDeviceInterface = new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE);
+
             Console.WriteLine("Look for a phone connected on a USB port");
-            Console.WriteLine("and exposing \"Care Connectivity\" device interface...\n");
-            devicePaths = USB.FindDevicePathsFromGuid(guidCareConnectivityDeviceInterface);
+            Console.Write("and exposing \"Care Connectivity\" device interface");
+            do
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(guidCareConnectivityDeviceInterface);
+            } while (devicePaths.Count == 0);
+            Console.WriteLine("\n");
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
@@ -426,14 +451,6 @@ namespace wpi
             }
             // Open the interface
             CareConnectivityDeviceInterface = new USB(devicePath);
-
-            byte[] ReadSSCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x46, 0x52, 0x00, 0x53, 0x53, 0x00, 0x00 }; // NOKXFR\0SS\0\0
-            CareConnectivityDeviceInterface.WritePipe(ReadSSCommand, ReadSSCommand.Length);
-            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
-
-            byte[] nokdCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x44 }; // NOKD
-            CareConnectivityDeviceInterface.WritePipe(nokdCommand, nokdCommand.Length);
-            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
 
             Console.WriteLine("\n\"Soft brick\" the phone in order to boot in EDL mode after the next reboot.");
             // To enter Emergency DownLoad mode (EDL) we are going to erase a part of the eMMC to "brick" the phone.
@@ -480,7 +497,7 @@ namespace wpi
             }
 
             // Send 1 empty chunk (according to layout in FFU headers, it will be written to first and last chunk) ?
-            // Erase the 256 first sectors (GPT ?) ?
+            // Erase the 256 first sectors (MBR + GPT ?) ?
             byte[] EmptyChunk = new byte[0x20000];
             Array.Clear(EmptyChunk, 0, 0x20000);
             secureFlashCommand = new byte[ffuHeader.Length + 28]; // command header size = 28 bytes
@@ -527,17 +544,22 @@ namespace wpi
             CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
-            test:
+            //test1:
+            Buffer = new byte[0x8000];
+            Guid guidEmergencyDeviceInterface = new Guid(GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE);
 
             Console.WriteLine("Look for a phone connected on a USB port");
-            Console.WriteLine("and exposing \"Lumia Emergency\" device interface...\n");
-
-            Guid guidEmergencyDeviceInterface = new Guid(GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE);
-            devicePaths = USB.FindDevicePathsFromGuid(guidEmergencyDeviceInterface);
+            Console.Write("and exposing \"Lumia Emergency\" device interface");
+            do
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(guidEmergencyDeviceInterface);
+            } while (devicePaths.Count == 0);
+            Console.WriteLine("\n");
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
-                ProgramExit(-1);
             }
             devicePath = devicePaths[0];
             Console.WriteLine("Path of the device found:\n{0}", devicePath);
@@ -551,17 +573,234 @@ namespace wpi
             USB EmergencyDeviceInterface = new USB(devicePath);
 
             Console.WriteLine("\nCheck communication with the phone in EDL mode...");
-            // Send DLOAD NOP command (0x06) to check we are able to communicate with the phone
+            // Send No-op command (0x06) to check we are able to communicate with the phone
+            // Notes: the PBL of the Lumia520 doesn't conform totally to the DDMS download protocol v8
+            // because the implementation is non-secure and almost all the commands are "unknown/invalid"
             byte[] nopCommand = Qualcomm.encodeHDLC(new byte[] { 0x06 }, 1);
             EmergencyDeviceInterface.WritePipe(nopCommand, nopCommand.Length);
-            byte[] ResponseBuffer = new byte[0x2000];
+            byte[] ResponseBuffer = new byte[0x2000]; // I don't know why we need this size.
             EmergencyDeviceInterface.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
             byte[] commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
             if (commandResult.Length !=1 || commandResult[0] != 0x02)
             {
                 Console.WriteLine("Expected DLOAD ACK (0x02) but received:");
                 printRaw(commandResult, commandResult.Length);
+                ProgramExit(-3);
             }
+
+         
+            Console.WriteLine("Upload the emergency programmer...");
+            if (!Qualcomm.SendToPhoneMemory(0x2A000000, programmer, (uint)programmer.Length, EmergencyDeviceInterface))
+            {
+                Console.WriteLine("Failed to upload the programmer.");
+                ProgramExit(-3);
+            }
+
+            Console.WriteLine("Start the emergency programmer...");
+            // Send Go command (0x05) to execute code at a given 32bits address
+            byte[] goCommand = Qualcomm.encodeHDLC(new byte[] { 0x05, 0x2A, 0x00, 0x00, 0x00 }, 5); // command (1byte) + address (4 bytes)
+            EmergencyDeviceInterface.WritePipe(goCommand, goCommand.Length);
+            EmergencyDeviceInterface.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
+            commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
+            if (commandResult.Length != 1 || commandResult[0] != 0x02)
+            {
+                Console.WriteLine("Expected DLOAD ACK (0x02) but received:");
+                printRaw(commandResult, commandResult.Length);
+                ProgramExit(-3);
+            }
+            EmergencyDeviceInterface.Close(); // The successful loading of the programmer causes a disconnection of the phone
+
+            Console.WriteLine("\nLook for a phone connected on a USB port");
+            Console.Write("and exposing \"Lumia Emergency\" device interface");
+            do
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(guidEmergencyDeviceInterface);
+            } while (devicePaths.Count == 0);
+            Console.WriteLine("\n");
+            if (devicePaths.Count != 1)
+            {
+                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
+            }
+            devicePath = devicePaths[0];
+            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                // Vendor ID 0x05C6 : Qualcomm Inc.
+                // Product ID 0x066E : Qualcomm Download
+                Console.WriteLine("Incorrect VID (expecting 0x05C6) and/or incorrect PID (expecting 0x9008)");
+                ProgramExit(-3);
+            }
+            EmergencyDeviceInterface = new USB(devicePath);
+
+            // TODO flash partitions
+            Console.WriteLine("\nSend the hello text \"QCOM fast download protocol host\" to the programmer...");
+            byte[] helloCommand = new byte[]
+            {
+                0x01, // "Hello" Ehost command
+                0x51, 0x43, 0x4F, 0x4D, 0x20, 0x66, 0x61, 0x73, 0x74, 0x20, 0x64, 0x6F, 0x77, 0x6E, 0x6C, 0x6F, // "QCOM fast download protocol host"
+                0x61, 0x64, 0x20, 0x70, 0x72, 0x6F, 0x74, 0x6F, 0x63, 0x6F, 0x6C, 0x20, 0x68, 0x6F, 0x73, 0x74,
+                0x02,
+                0x02, // Protocol version - Must be at least 0x02
+                0x01
+            };
+            // Strange: we don't encode in HDLC the message sent to the phone
+            // but the reponse from the phone is encoded in HDLC...
+            EmergencyDeviceInterface.WritePipe(helloCommand, helloCommand.Length);
+            EmergencyDeviceInterface.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
+            commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
+            if (commandResult.Length < 1 || commandResult[0] != 0x02)
+            {
+                Console.WriteLine("Expected Ehost \"Hello\" response (0x02) but received:");
+                printRaw(commandResult, commandResult.Length);
+                ProgramExit(-3);
+            }
+
+            Console.WriteLine("\nChange security mode..."); 
+            byte[] setSecurityModeCommand = new byte[] { 0x17, 0x00 }; // SECURITY_REQ 0
+            // I don't known what is value 0
+            EmergencyDeviceInterface.WritePipe(setSecurityModeCommand, setSecurityModeCommand.Length);
+            EmergencyDeviceInterface.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
+            commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
+            if (commandResult.Length < 1 || commandResult[0] != 0x18)
+            {
+                Console.WriteLine("Expected Ehost \"SECURITY_RSP\" response (0x18) but received:");
+                printRaw(commandResult, commandResult.Length);
+                ProgramExit(-3);
+            }
+
+            Console.WriteLine("\nOpen partition..."); 
+            byte[] openPartitionCommand = new byte[] { 0x1B, 0x21 }; // OPEN_MULTI_REQ 0x21
+            // 0x21=33=Partition type EMMCUSER - For programming eMMC chip (singleimage.mbn) ?
+            EmergencyDeviceInterface.WritePipe(openPartitionCommand, openPartitionCommand.Length);
+            EmergencyDeviceInterface.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
+            commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
+            if (commandResult.Length < 1 || commandResult[0] != 0x1C)
+            {
+                Console.WriteLine("Expected Ehost \"OPEN_MULTI_RSP\" response (0x1C) but received:");
+                printRaw(commandResult, commandResult.Length);
+                ProgramExit(-3);
+            }
+
+//            Console.WriteLine("\nFlash the HACK partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", HackPartition.firstSector, hackPartitionContent.Length);
+//            Qualcomm.Flash((uint)HackPartition.firstSector * 512, hackPartitionContent, (uint)hackPartitionContent.Length, EmergencyDeviceInterface);
+
+            // To minimize risk of brick we also flash unmodified partitions (MBR, SBL1, TZ, RPM, WINSECAPP)
+            // Note: SBL1 is not really modified, just truncated by the HACK partition.
+            byte[] ffuMBR = ffu.GetSectors(0, 1);
+            Console.WriteLine("\nFlash the MBR partition (sector 0x0 ,size 0x{0:X} bytes)...", ffuMBR.Length);
+            Qualcomm.Flash(0, ffuMBR, (uint)ffuMBR.Length, EmergencyDeviceInterface);
+
+            byte[] ffuGPT = ffu.GetSectors(0x01, 0x22);
+            Console.WriteLine("\nFlash the GPT partition (sector 0x1 ,size 0x{0:X} bytes)...", ffuGPT.Length);
+            Qualcomm.Flash(0x200, ffuGPT, 0x41FF, EmergencyDeviceInterface); // Bad bounds-check in the flash-loader prohibits to write the last byte.
+
+            // TODO
+
+            Console.WriteLine("\nClose partition ..."); //Close and flush last partial write to flash
+            byte[] closePartitionCommand = new byte[] { 0x15 }; // CLOSE_REQ
+            EmergencyDeviceInterface.WritePipe(closePartitionCommand, closePartitionCommand.Length);
+            EmergencyDeviceInterface.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
+            commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
+            if (commandResult.Length < 1 || commandResult[0] != 0x16)
+            {
+                Console.WriteLine("Expected Ehost \"CLOSE_RSP\" response (0x16) but received:");
+                printRaw(commandResult, commandResult.Length);
+                ProgramExit(-3);
+            }
+
+            Console.WriteLine("\nReboot the phone..."); 
+            byte[] rebootCommand = new byte[] { 0x0B }; // RESET_REQ
+            EmergencyDeviceInterface.WritePipe(rebootCommand, rebootCommand.Length);
+            EmergencyDeviceInterface.ReadPipe(ResponseBuffer, ResponseBuffer.Length, out bytesRead);
+            commandResult = Qualcomm.decodeHDLC(ResponseBuffer, (int)bytesRead);
+            if (commandResult.Length < 1 || commandResult[0] != 0x0C)
+            {
+                Console.WriteLine("Expected Ehost \"RESET_ACK\" response (0x0C) but received:");
+                printRaw(commandResult, commandResult.Length);
+                ProgramExit(-3);
+            }
+
+            EmergencyDeviceInterface.Close();
+
+            Console.WriteLine("\nAfter reboot, the phone should be in \"flash\" mode \"in-progress\" : A big \"NOKIA\" in the top part of the screen on a dark red background.\n");
+            // This is because we previously interrupt a flash session to brick the phone...
+
+            test1:
+            Buffer = new byte[0x8000];
+
+            Console.WriteLine("Look for a phone connected on a USB port");
+            Console.Write("and exposing \"Care Connectivity\" device interface");
+            guidCareConnectivityDeviceInterface = new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE);
+            do
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(guidCareConnectivityDeviceInterface);
+            } while (devicePaths.Count == 0);
+            Console.WriteLine("\n");
+            if (devicePaths.Count != 1)
+            {
+                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
+            }
+            devicePath = devicePaths[0];
+            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                // Vendor ID 0x0421 : Nokia Corporation
+                // Product ID 0x066E : UEFI mode (including flash and bootloader mode)
+                Console.WriteLine("Incorrect VID (expecting 0x0421) and/or incorrect PID (expecting 0x066E)");
+                ProgramExit(-3);
+            }
+            // Open the interface
+            CareConnectivityDeviceInterface = new USB(devicePath);
+
+            Console.WriteLine("\nRead secure flash status...");
+            byte[] ReadSecureFlashCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x46, 0x52, 0x00, 0x46, 0x53, 0x00, 0x00 }; // NOKXFR\0FS\0\0 
+            CareConnectivityDeviceInterface.WritePipe(ReadSecureFlashCommand, ReadSecureFlashCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+            if (!CareConnectivity.parseNOKXFRFS(Buffer, (int)bytesRead))
+            {
+                Console.WriteLine("Flash mode is not \"in-progress\".");
+                ProgramExit(-3);
+            }
+
+            // Flash dummy sector (only allowed when phone is authenticated)
+            Console.WriteLine("Flash an empty sector to exit the \"flash\" mode...");
+            byte[] flashCommand = new byte[576]; // command header (64 bytes) + empty sector (512 bytes)
+            // We use the normal command NOKF instead of the UFP extended command NOKXFS
+            flashCommand[0] = 0x4E; // N
+            flashCommand[1] = 0x4F; // O
+            flashCommand[2] = 0x4B; // K
+            flashCommand[3] = 0x46; // F
+            flashCommand[5] = 0x00; // Device type = 0
+            flashCommand[11] = 0x00; // Start sector is just after the last sector of the GPT (0x22)
+            flashCommand[12] = 0x00;
+            flashCommand[13] = 0x00;
+            flashCommand[14] = 0x22;
+            flashCommand[15] = 0x00; // Sector count = 1
+            flashCommand[16] = 0x00;
+            flashCommand[17] = 0x00;
+            flashCommand[18] = 0x01;
+            flashCommand[19] = 0x00; // Progress (0 - 100)
+            flashCommand[24] = 0x00; // Do Verify
+            flashCommand[25] = 0x00; //  Is Test
+            Array.Clear(flashCommand, 64, 512); // Add the content of the empty sector
+            CareConnectivityDeviceInterface.WritePipe(flashCommand, flashCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+            // todo check return
+
+            // Reboot to Qualcomm Emergency mode
+            Console.WriteLine("\nPress [Enter] to reboot the phone...");
+            //Console.ReadLine();
+            RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR
+            CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
+
+
+            CareConnectivityDeviceInterface.Close();
+
 
             ProgramExit(0);
         }

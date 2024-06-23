@@ -8,15 +8,23 @@ namespace wpi
 {
     class GPT
     {
-        public static List<Partition> parse(byte[] values, int length)
+        public byte[] GPTBuffer;
+        private int HeaderOffset;
+        private UInt32 HeaderSize;
+        private UInt32 TableOffset;
+        private UInt32 TableSize;
+        private UInt32 PartitionEntrySize;
+        public List<Partition> partitions;
+
+        internal GPT(byte[] values, int length)
         {
-            List<Partition> partitions = new List<Partition>();
+            partitions = new List<Partition>();
 
             if (length < 0x4400) // 34 sectors of 512 bytes
             {
-                Console.WriteLine("Byte array too short.");
-                return partitions;
+                throw new System.Exception("Byte array too short.");
             }
+            this.GPTBuffer = values;
 
             uint sectorSize;
             if (length == 0x4400) // 34 sectors of 0x200 bytes.
@@ -29,45 +37,42 @@ namespace wpi
             }
             else
             {
-                Console.WriteLine("Unsupported sector size.");
-                return partitions;
+                throw new System.Exception("Unsupported sector size.");
             }
 
             // first sector is Master Boot Record (MBR)
 
             byte[] headerPattern = new byte[] { 0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54 }; // "EFI PART"
-            int headerOffset = -1;
+            HeaderOffset = -1;
             for (int i = 0; i < length; i++)
             {
                 if (values.Skip(i).Take(headerPattern.Length).SequenceEqual(headerPattern))
                 {
-                    headerOffset = i;
+                    HeaderOffset = i;
                 }
             }
-            if (headerOffset == -1)
+            if (HeaderOffset == -1)
             {
-                Console.WriteLine("Header not found.");
-                return partitions;
+                throw new System.Exception("Header not found.");
             }
 
-            uint headerSize = (uint)(values[headerOffset + 15] << 24) + (uint)(values[headerOffset + 14] << 16) + (uint)(values[headerOffset + 13] << 8) + values[headerOffset + 12];
-            uint tableOffset = (uint)headerOffset + sectorSize;
-            ulong firstUsableSector = (ulong)(values[headerOffset + 47] << 56) + (ulong)(values[headerOffset + 46] << 48) + (ulong)(values[headerOffset + 45] << 40) + (ulong)(values[headerOffset + 44] << 32) + (ulong)(values[headerOffset + 43] << 24) + (ulong)(values[headerOffset + 42] << 16) + (ulong)(values[headerOffset + 41] << 8) + values[headerOffset + 40];
-            ulong lastUsableSector = (ulong)(values[headerOffset + 55] << 56) + (ulong)(values[headerOffset + 54] << 48) + (ulong)(values[headerOffset + 53] << 40) + (ulong)(values[headerOffset + 52] << 32) + (ulong)(values[headerOffset + 51] << 24) + (ulong)(values[headerOffset + 50] << 16) + (ulong)(values[headerOffset + 49] << 8) + values[headerOffset + 48];
-            uint maxPartitions = (uint)(values[headerOffset + 83] << 24) + (uint)(values[headerOffset + 82] << 16) + (uint)(values[headerOffset + 81] << 8) + values[headerOffset + 80];
-            uint partitionEntrySize = (uint)(values[headerOffset + 87] << 24) + (uint)(values[headerOffset + 86] << 16) + (uint)(values[headerOffset + 85] << 8) + values[headerOffset + 84];
-            uint tableSize = maxPartitions * partitionEntrySize;
-            if (tableOffset + tableSize > length)
+            HeaderSize = (uint)(values[HeaderOffset + 15] << 24) + (uint)(values[HeaderOffset + 14] << 16) + (uint)(values[HeaderOffset + 13] << 8) + values[HeaderOffset + 12];
+            TableOffset = (uint)HeaderOffset + sectorSize;
+            ulong firstUsableSector = (ulong)(values[HeaderOffset + 47] << 56) + (ulong)(values[HeaderOffset + 46] << 48) + (ulong)(values[HeaderOffset + 45] << 40) + (ulong)(values[HeaderOffset + 44] << 32) + (ulong)(values[HeaderOffset + 43] << 24) + (ulong)(values[HeaderOffset + 42] << 16) + (ulong)(values[HeaderOffset + 41] << 8) + values[HeaderOffset + 40];
+            ulong lastUsableSector = (ulong)(values[HeaderOffset + 55] << 56) + (ulong)(values[HeaderOffset + 54] << 48) + (ulong)(values[HeaderOffset + 53] << 40) + (ulong)(values[HeaderOffset + 52] << 32) + (ulong)(values[HeaderOffset + 51] << 24) + (ulong)(values[HeaderOffset + 50] << 16) + (ulong)(values[HeaderOffset + 49] << 8) + values[HeaderOffset + 48];
+            uint maxPartitions = (uint)(values[HeaderOffset + 83] << 24) + (uint)(values[HeaderOffset + 82] << 16) + (uint)(values[HeaderOffset + 81] << 8) + values[HeaderOffset + 80];
+            PartitionEntrySize = (uint)(values[HeaderOffset + 87] << 24) + (uint)(values[HeaderOffset + 86] << 16) + (uint)(values[HeaderOffset + 85] << 8) + values[HeaderOffset + 84];
+            TableSize = maxPartitions * PartitionEntrySize;
+            if (TableOffset + TableSize > length)
             {
-                Console.WriteLine("Response too short compared to the GPT table size.");
-                return partitions;
+                throw new System.Exception("Response too short compared to the GPT table size.");
             }
 
-            uint partitionOffset = tableOffset;
+            uint partitionOffset = TableOffset;
             Console.WriteLine("\nPartition name                       firstSect. lastSect. Attributes");
             Console.WriteLine("\tPartition type GUID");
             Console.WriteLine("\tPartition GUID");
-            while (partitionOffset < tableOffset + tableSize)
+            while (partitionOffset < TableOffset + TableSize)
             {
                 byte[] guidBuffer = new byte[16];
                 Buffer.BlockCopy(values, (int)partitionOffset, guidBuffer, 0, 16);
@@ -103,10 +108,66 @@ namespace wpi
                     partitions.Add(partition);
                 }
 
-                partitionOffset += partitionEntrySize;
+                partitionOffset += PartitionEntrySize;
+            }
+        }
+
+        public void Rebuild()
+        {
+            Array.Clear(GPTBuffer, (int)TableOffset, (int)TableSize);
+
+            UInt32 PartitionOffset = TableOffset;
+            foreach (Partition CurrentPartition in partitions)
+            {
+                Buffer.BlockCopy(CurrentPartition.partitionTypeGuid.ToByteArray(), 0, GPTBuffer, (int)PartitionOffset, 16);
+                Buffer.BlockCopy(CurrentPartition.partitionGuid.ToByteArray(), 0, GPTBuffer, (int)PartitionOffset+16, 16);
+
+                GPTBuffer[PartitionOffset + 32] = (byte)(CurrentPartition.firstSector & 0xFF);
+                GPTBuffer[PartitionOffset + 33] = (byte)((CurrentPartition.firstSector >> 8) & 0xFF);
+                GPTBuffer[PartitionOffset + 34] = (byte)((CurrentPartition.firstSector >> 16) & 0xFF);
+                GPTBuffer[PartitionOffset + 35] = (byte)((CurrentPartition.firstSector >> 24) & 0xFF);
+                GPTBuffer[PartitionOffset + 36] = (byte)((CurrentPartition.firstSector >> 32) & 0xFF);
+                GPTBuffer[PartitionOffset + 37] = (byte)((CurrentPartition.firstSector >> 40) & 0xFF);
+                GPTBuffer[PartitionOffset + 38] = (byte)((CurrentPartition.firstSector >> 48) & 0xFF);
+                GPTBuffer[PartitionOffset + 39] = (byte)((CurrentPartition.firstSector >> 56) & 0xFF);
+
+                GPTBuffer[PartitionOffset + 40] = (byte)(CurrentPartition.lastSector & 0xFF);
+                GPTBuffer[PartitionOffset + 41] = (byte)((CurrentPartition.lastSector >> 8) & 0xFF);
+                GPTBuffer[PartitionOffset + 42] = (byte)((CurrentPartition.lastSector >> 16) & 0xFF);
+                GPTBuffer[PartitionOffset + 43] = (byte)((CurrentPartition.lastSector >> 24) & 0xFF);
+                GPTBuffer[PartitionOffset + 44] = (byte)((CurrentPartition.lastSector >> 32) & 0xFF);
+                GPTBuffer[PartitionOffset + 45] = (byte)((CurrentPartition.lastSector >> 40) & 0xFF);
+                GPTBuffer[PartitionOffset + 46] = (byte)((CurrentPartition.lastSector >> 48) & 0xFF);
+                GPTBuffer[PartitionOffset + 47] = (byte)((CurrentPartition.lastSector >> 56) & 0xFF);
+
+                GPTBuffer[PartitionOffset + 48] = (byte)(CurrentPartition.attributes & 0xFF);
+                GPTBuffer[PartitionOffset + 49] = (byte)((CurrentPartition.attributes >> 8) & 0xFF);
+                GPTBuffer[PartitionOffset + 50] = (byte)((CurrentPartition.attributes >> 16) & 0xFF);
+                GPTBuffer[PartitionOffset + 51] = (byte)((CurrentPartition.attributes >> 24) & 0xFF);
+                GPTBuffer[PartitionOffset + 52] = (byte)((CurrentPartition.attributes >> 32) & 0xFF);
+                GPTBuffer[PartitionOffset + 53] = (byte)((CurrentPartition.attributes >> 40) & 0xFF);
+                GPTBuffer[PartitionOffset + 54] = (byte)((CurrentPartition.attributes >> 48) & 0xFF);
+                GPTBuffer[PartitionOffset + 55] = (byte)((CurrentPartition.attributes >> 56) & 0xFF);
+
+                Array.Clear(GPTBuffer, (int)PartitionOffset + 56, 72);
+                byte[] TextBytes = System.Text.UnicodeEncoding.Unicode.GetBytes(CurrentPartition.name);
+                Buffer.BlockCopy(TextBytes, 0, GPTBuffer, (int)PartitionOffset + 56, TextBytes.Length);
+
+                PartitionOffset += PartitionEntrySize;
             }
 
-            return partitions;
+            
+            uint crcHeader = CRC32.CalculateChecksum(GPTBuffer, (uint)HeaderOffset, HeaderSize);
+            GPTBuffer[HeaderOffset + 16] = (byte)(crcHeader & 0xFF);
+            GPTBuffer[HeaderOffset + 17] = (byte)((crcHeader >> 8) & 0xFF);
+            GPTBuffer[HeaderOffset + 18] = (byte)((crcHeader >> 16) & 0xFF);
+            GPTBuffer[HeaderOffset + 19] = (byte)((crcHeader >> 24) & 0xFF);
+
+            uint crcTable = CRC32.CalculateChecksum(GPTBuffer, TableOffset, TableSize);
+            GPTBuffer[HeaderOffset + 88] = (byte)(crcHeader & 0xFF);
+            GPTBuffer[HeaderOffset + 89] = (byte)((crcHeader >> 8) & 0xFF);
+            GPTBuffer[HeaderOffset + 90] = (byte)((crcHeader >> 16) & 0xFF);
+            GPTBuffer[HeaderOffset + 91] = (byte)((crcHeader >> 24) & 0xFF);
         }
     }
 }

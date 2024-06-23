@@ -160,14 +160,12 @@ namespace wpi
             Console.WriteLine("eMMC manufacturer: {0}", Manufacturer);
         }
 
-        public static List<Partition> parseNOKT(byte[] values, int length)
+        public static GPT parseNOKT(byte[] values, int length)
         {
-            List<Partition> partitions = new List<Partition>();
-
             if (length < 0x4408) // header (NOKT) + error code (2 bytes) + 34 sectors of 512 bytes
             {
                 Console.WriteLine("Response too short.");
-                return partitions;
+                return null;
             }
 
             // First 4 values must be NOKT
@@ -175,19 +173,17 @@ namespace wpi
             if (!isNOKT)
             {
                 Console.WriteLine("Not NOKT response.");
-                return partitions;
+                return null;
             }
 
             ushort error = (ushort)((values[6] << 8) + values[7]);
             if (error > 0)
             {
                 Console.WriteLine("Error 0x" + error.ToString("X4"));
-                return partitions;
+                return null;
             }
 
-            partitions = GPT.parse(values.Skip(8).Take(length - 8).ToArray(), length-8); // header + error code = 8 bytes
-
-            return partitions;
+            return new GPT(values.Skip(8).Take(length - 8).ToArray(), length-8); // header + error code = 8 bytes
         }
 
         public static byte[] parseNOKXFRRRKH(byte[] values, int length)
@@ -218,6 +214,29 @@ namespace wpi
             Console.WriteLine("");
 
             return rkh;
+        }
+
+        public static bool parseNOKXFRFS(byte[] values, int length)
+        {
+            if (length < 21) // header + flash status (4 bytes)
+            {
+                Console.WriteLine("Response too short.");
+                return false;
+            }
+
+            // First 4 values must be NOKX
+            bool isNOKX = values[0] == 'N' && values[1] == 'O' && values[2] == 'K' && values[3] == 'X';
+            if (!isNOKX)
+            {
+                Console.WriteLine("Not NOKX response.");
+                return false;
+            }
+
+            // values[16] indicates the size of the response
+            // It should be 4 in our case
+            uint flashStatus = (uint)(values[17] << 24) + (uint)(values[18] << 16) + (uint)(values[19] << 8) + (uint)(values[20]);
+
+            return flashStatus == 1;
         }
     }
 }
