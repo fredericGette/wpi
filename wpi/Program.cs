@@ -112,8 +112,6 @@ namespace wpi
             Console.Write("\nPrepare a patched version of the UEFI partition.");
             uefi.Patch();
 
-            ProgramExit(99);
-
             // We need a "loader" (a programmer) to be able to write partitions in the eMMC in Emergency DownLoad mode (EDL mode)
             Console.Write("\n\nPath of the emergency programmer (.hex) :");
             string programmerFile = Console.ReadLine();
@@ -410,6 +408,9 @@ namespace wpi
             SBL2.partitionTypeGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
             SBL2.partitionGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
 
+            Console.WriteLine("\nRebuild the GPT...");
+            gpt.Rebuild();
+
             Console.WriteLine("\nReturning to \"flash\" mode to start flashing the phone...");
 
             // Go from "bootloader" mode to "flash" mode.
@@ -500,7 +501,7 @@ namespace wpi
             // Erase the 256 first sectors (MBR + GPT ?) ?
             byte[] EmptyChunk = new byte[0x20000];
             Array.Clear(EmptyChunk, 0, 0x20000);
-            secureFlashCommand = new byte[ffuHeader.Length + 28]; // command header size = 28 bytes
+            secureFlashCommand = new byte[EmptyChunk.Length + 28]; // command header size = 28 bytes
             secureFlashCommand[0] = 0x4E; // N
             secureFlashCommand[1] = 0x4F; // O
             secureFlashCommand[2] = 0x4B; // K
@@ -544,7 +545,7 @@ namespace wpi
             CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
-            //test1:
+            test1:
             Buffer = new byte[0x8000];
             Guid guidEmergencyDeviceInterface = new Guid(GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE);
 
@@ -634,7 +635,6 @@ namespace wpi
             }
             EmergencyDeviceInterface = new USB(devicePath);
 
-            // TODO flash partitions
             Console.WriteLine("\nSend the hello text \"QCOM fast download protocol host\" to the programmer...");
             byte[] helloCommand = new byte[]
             {
@@ -683,8 +683,8 @@ namespace wpi
                 ProgramExit(-3);
             }
 
-//            Console.WriteLine("\nFlash the HACK partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", HackPartition.firstSector, hackPartitionContent.Length);
-//            Qualcomm.Flash((uint)HackPartition.firstSector * 512, hackPartitionContent, (uint)hackPartitionContent.Length, EmergencyDeviceInterface);
+            Console.WriteLine("\nFlash the HACK partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", HackPartition.firstSector, hackPartitionContent.Length);
+            Qualcomm.Flash((uint)HackPartition.firstSector * 512, hackPartitionContent, (uint)hackPartitionContent.Length, EmergencyDeviceInterface);
 
             // To minimize risk of brick we also flash unmodified partitions (MBR, SBL1, TZ, RPM, WINSECAPP)
             // Note: SBL1 is not really modified, just truncated by the HACK partition.
@@ -693,10 +693,43 @@ namespace wpi
             Qualcomm.Flash(0, ffuMBR, (uint)ffuMBR.Length, EmergencyDeviceInterface);
 
             byte[] ffuGPT = ffu.GetSectors(0x01, 0x22);
-            Console.WriteLine("\nFlash the GPT partition (sector 0x1 ,size 0x{0:X} bytes)...", ffuGPT.Length);
-            Qualcomm.Flash(0x200, ffuGPT, 0x41FF, EmergencyDeviceInterface); // Bad bounds-check in the flash-loader prohibits to write the last byte.
+            Console.WriteLine("\nFlash the GPT partition (sector 0x1 ,size 0x{0:X} bytes)...", gpt.GPTBuffer.Length);
+            Qualcomm.Flash(0x200, gpt.GPTBuffer, 0x41FF, EmergencyDeviceInterface); // Bad bounds-check in the flash-loader prohibits to write the last byte.
+            //Qualcomm.Flash(0x200, ffu.GetSectors(0x01, 0x22), 0x41FF, EmergencyDeviceInterface); // Bad bounds-check in the flash-loader prohibits to write the last byte.
 
-            // TODO
+            Console.WriteLine("\nFlash the SBL2 partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", SBL2.firstSector * 512, ffuSBL2.Length);
+            Qualcomm.Flash((uint)SBL2.firstSector * 512, ffuSBL2, (uint)ffuSBL2.Length, EmergencyDeviceInterface);
+            //Qualcomm.Flash((uint)ffu.gpt.GetPartition("SBL2").firstSector * 512, ffu.GetPartition("SBL2"), (uint)ffu.GetPartition("SBL2").Length, EmergencyDeviceInterface);
+
+            Console.WriteLine("\nFlash the SBL3 partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("SBL3").firstSector * 512, engeeniringSBL3.Length);
+            Qualcomm.Flash((uint)gpt.GetPartition("SBL3").firstSector * 512, engeeniringSBL3, (uint)engeeniringSBL3.Length, EmergencyDeviceInterface);
+            //Qualcomm.Flash((uint)ffu.gpt.GetPartition("SBL3").firstSector * 512, ffu.GetPartition("SBL3"), (uint)ffu.GetPartition("SBL3").Length, EmergencyDeviceInterface);
+
+            Console.WriteLine("\nFlash the UEFI partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("UEFI").firstSector * 512, uefi.Binary.Length);
+            Qualcomm.Flash((uint)gpt.GetPartition("UEFI").firstSector * 512, uefi.Binary, (uint)uefi.Binary.Length, EmergencyDeviceInterface);
+            //Qualcomm.Flash((uint)ffu.gpt.GetPartition("UEFI").firstSector * 512, ffu.GetPartition("UEFI"), (uint)ffu.GetPartition("UEFI").Length, EmergencyDeviceInterface);
+
+            Console.WriteLine("\nFlash the SBL1 partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("SBL1").firstSector * 512, ffuSBL1.Length);
+            Qualcomm.Flash((uint)gpt.GetPartition("SBL1").firstSector * 512, ffuSBL1, (uint)(gpt.GetPartition("SBL1").lastSector - gpt.GetPartition("SBL1").firstSector) * 512, EmergencyDeviceInterface); // SBL1 new size is 1 sector less than orignal size.
+            //Qualcomm.Flash((uint)ffu.gpt.GetPartition("SBL1").firstSector * 512, ffu.GetPartition("SBL1"), (uint)ffu.GetPartition("SBL1").Length, EmergencyDeviceInterface);
+
+            Console.WriteLine("\nFlash the TZ partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("TZ").firstSector * 512, ffu.GetPartition("TZ").Length);
+            Qualcomm.Flash((uint)gpt.GetPartition("TZ").firstSector * 512, ffu.GetPartition("TZ"), (uint)ffu.GetPartition("TZ").Length, EmergencyDeviceInterface);
+            //Qualcomm.Flash((uint)ffu.gpt.GetPartition("TZ").firstSector * 512, ffu.GetPartition("TZ"), (uint)ffu.GetPartition("TZ").Length, EmergencyDeviceInterface);
+
+            Console.WriteLine("\nFlash the RPM partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("RPM").firstSector * 512, ffu.GetPartition("RPM").Length);
+            Qualcomm.Flash((uint)gpt.GetPartition("RPM").firstSector * 512, ffu.GetPartition("RPM"), (uint)ffu.GetPartition("RPM").Length, EmergencyDeviceInterface);
+            //Qualcomm.Flash((uint)ffu.gpt.GetPartition("RPM").firstSector * 512, ffu.GetPartition("RPM"), (uint)ffu.GetPartition("RPM").Length, EmergencyDeviceInterface);
+
+            // Workaround for bad bounds-check in flash-loader
+            UInt32 WINSECAPPLength = (UInt32)ffu.GetPartition("WINSECAPP").Length;
+            UInt32 WINSECAPPStart = (UInt32)gpt.GetPartition("WINSECAPP").firstSector * 512;
+            //UInt32 WINSECAPPStart = (UInt32)ffu.gpt.GetPartition("WINSECAPP").firstSector * 512;
+            if ((WINSECAPPStart + WINSECAPPLength) > 0x1E7FE00)
+                WINSECAPPLength = 0x1E7FE00 - WINSECAPPStart;
+            Console.WriteLine("\nFlash the WINSECAPP partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP").Length);
+            Qualcomm.Flash((uint)gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP"), WINSECAPPLength, EmergencyDeviceInterface);
+            //Qualcomm.Flash((uint)ffu.gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP"), WINSECAPPLength, EmergencyDeviceInterface);
 
             Console.WriteLine("\nClose partition ..."); //Close and flush last partial write to flash
             byte[] closePartitionCommand = new byte[] { 0x15 }; // CLOSE_REQ
@@ -727,7 +760,7 @@ namespace wpi
             Console.WriteLine("\nAfter reboot, the phone should be in \"flash\" mode \"in-progress\" : A big \"NOKIA\" in the top part of the screen on a dark red background.\n");
             // This is because we previously interrupt a flash session to brick the phone...
 
-            test1:
+            //test1:
             Buffer = new byte[0x8000];
 
             Console.WriteLine("Look for a phone connected on a USB port");

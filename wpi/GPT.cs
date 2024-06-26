@@ -119,6 +119,8 @@ namespace wpi
             UInt32 PartitionOffset = TableOffset;
             foreach (Partition CurrentPartition in partitions)
             {
+                Console.WriteLine("\tProcessing partition {0}", CurrentPartition.name);
+
                 Buffer.BlockCopy(CurrentPartition.partitionTypeGuid.ToByteArray(), 0, GPTBuffer, (int)PartitionOffset, 16);
                 Buffer.BlockCopy(CurrentPartition.partitionGuid.ToByteArray(), 0, GPTBuffer, (int)PartitionOffset+16, 16);
 
@@ -168,6 +170,11 @@ namespace wpi
             GPTBuffer[HeaderOffset + 89] = (byte)((crcHeader >> 8) & 0xFF);
             GPTBuffer[HeaderOffset + 90] = (byte)((crcHeader >> 16) & 0xFF);
             GPTBuffer[HeaderOffset + 91] = (byte)((crcHeader >> 24) & 0xFF);
+        }
+
+        public Partition GetPartition(string Name)
+        {
+            return partitions.Where(p => (string.Compare(p.name, Name, true) == 0)).FirstOrDefault();
         }
     }
 }

@@ -1,6 +1,7 @@
 ﻿using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -181,8 +182,50 @@ namespace wpi
             }
         }
 
+        public static void printRaw(byte[] values, int length, bool write)
+        {
+            StreamWriter w = File.AppendText(Environment.ExpandEnvironmentVariables("%ALLUSERSPROFILE%\\WPInternals\\wpi3.log"));
+            if (write)
+            {
+                w.WriteLine("< {0} bytes", length);
+                w.Flush();
+            }
+            else
+            {
+                w.WriteLine("> {0} bytes", length);
+                w.Flush();
+            }
+            string hex = "";
+            bool flushed = false;
+            for (int i = 0; i < length; i++)
+            {
+                hex += values[i].ToString("X2") + " ";
+                flushed = false;
+
+                if ((i + 1) % 36 == 0)
+                {
+                    w.WriteLine(hex);
+                    w.Flush();
+                    flushed = true;
+                    hex = "";
+                }
+            }
+            if (!flushed)
+            {
+                w.WriteLine(hex);
+                w.Flush();
+            }
+            w.Close();
+        }
+
         private void printRaw(byte[] values, int length)
         {
+            if (length > 32)
+            {
+                Console.WriteLine("Not displayed {0} bytes.", length);
+                return;
+            }
+
             string characters = "";
             bool truncated = false;
             int truncatedLength = length;
@@ -238,7 +281,8 @@ namespace wpi
                 throw new System.Exception("Failed to read pipe on WinUSB device.");
 
             Console.WriteLine(">Received:");
-            printRaw(buffer, (int)bytesRead);
+            printRaw(buffer, (int)bytesRead, false);
+            //printRaw(buffer, (int)bytesRead);
         }
 
         public void WritePipe(byte[] buffer, int length)
@@ -247,7 +291,8 @@ namespace wpi
             bool success;
 
             Console.WriteLine("<Sent:");
-            printRaw(buffer, length);
+            printRaw(buffer, length, true);
+            //printRaw(buffer, length);
 
             unsafe
             {
