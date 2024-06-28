@@ -167,7 +167,6 @@ namespace wpi
                 return null;
             }
             uint PartitionLoaderTableOffset = (uint)patternPosition;
-            Console.WriteLine("\nSBL1 PartitionLoaderTableOffset = 0x{0:X8}", PartitionLoaderTableOffset);
 
             // Find the position of the SharedMemoryAddress inside SBL1
             patternToFind = new byte[] { 0x04, 0x00, 0x9F, 0xE5, 0x28, 0x00, 0xD0, 0xE5, 0x1E, 0xFF, 0x2F, 0xE1 };
@@ -187,16 +186,11 @@ namespace wpi
             }
             uint SharedMemoryAddress = sbl1[patternPosition + 12] + (uint)(sbl1[patternPosition + 13] << 8) + (uint)(sbl1[patternPosition + 14] << 16) + (uint)(sbl1[patternPosition + 15] << 24);
             uint GlobalIsSecurityEnabledAddress = SharedMemoryAddress + 40;
-            Console.WriteLine("SBL1 SharedMemoryAddress = 0x{0:X8}", SharedMemoryAddress);
-            Console.WriteLine("SBL1 GlobalIsSecurityEnabledAddress = 0x{0:X8}", GlobalIsSecurityEnabledAddress);
 
             // Compute the ImageOffset and the ImageAddress of SBL1
             uint HeaderOffset = 0x2800 + 20; // SBL1 offset + total size of "Long Header"
             uint ImageOffset = sbl1[HeaderOffset] + (uint)(sbl1[HeaderOffset + 1] << 8) + (uint)(sbl1[HeaderOffset + 2] << 16) + (uint)(sbl1[HeaderOffset + 2] << 24);
             uint ImageAddress = sbl1[HeaderOffset + 4] + (uint)(sbl1[HeaderOffset + 5] << 8) + (uint)(sbl1[HeaderOffset + 6] << 16) + (uint)(sbl1[HeaderOffset + 7] << 24);
-            Console.WriteLine("SBL1 HeaderOffset = 0x{0:X8}", HeaderOffset);
-            Console.WriteLine("SBL1 ImageOffset = 0x{0:X8}", ImageOffset);
-            Console.WriteLine("SBL1 ImageAddress = 0x{0:X8}", ImageAddress);
 
             // Find the position of the ReturnAddress inside SBL1
             patternToFind = new byte[] { 0xA0, 0xE1, 0x1C, 0xD0, 0x8D, 0xE2, 0xF0, 0x4F, 0xBD, 0xE8, 0x1E, 0xFF, 0x2F, 0xE1 };
@@ -215,7 +209,6 @@ namespace wpi
                 return null;
             }
             uint ReturnAddress = (UInt32)patternPosition - 6 - ImageOffset + ImageAddress;
-            Console.WriteLine("SBL1 ReturnAddress = 0x{0:X8}", ReturnAddress);
 
             // Initialize the content of the HACK partition (partition size = 1 sector)
             byte[] hackPartitionContent = new byte[0x200];
@@ -261,8 +254,8 @@ namespace wpi
             hackPartitionContent[287] = 0;
             hackPartitionContent[296] = 0xF0; // 0x000210F0 what is the meaning of this value ?
             hackPartitionContent[297] = 0x10;
-            hackPartitionContent[297] = 0x02;
-            hackPartitionContent[298] = 0x00;
+            hackPartitionContent[298] = 0x02;
+            hackPartitionContent[299] = 0x00;
 
             // Copy the new Type GUID thta is going to be applied to partition SBL2
             byte[] PartitionTypeGuid = new byte[] {

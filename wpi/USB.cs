@@ -182,7 +182,7 @@ namespace wpi
             }
         }
 
-        public static void printRaw(byte[] values, int length, bool write)
+        public static void printRawFile(byte[] values, int length, bool write)
         {
             StreamWriter w = File.AppendText(Environment.ExpandEnvironmentVariables("%ALLUSERSPROFILE%\\WPInternals\\wpi3.log"));
             if (write)
@@ -218,23 +218,28 @@ namespace wpi
             w.Close();
         }
 
-        private void printRaw(byte[] values, int length)
+        private void printRawConsole(byte[] values, int length, bool write)
         {
+            if (write)
+            {
+                Console.Write("< {0} bytes", length);
+            }
+            else
+            {
+                Console.Write("> {0} bytes", length);
+            }
             if (length > 32)
             {
-                Console.WriteLine("Not displayed {0} bytes.", length);
+                Console.WriteLine(" Too long, not displayed.", length);
                 return;
+            }
+            else
+            {
+                Console.WriteLine("");
             }
 
             string characters = "";
-            bool truncated = false;
-            int truncatedLength = length;
-            if (truncatedLength > 190) // display at max 10 lines of values
-            {
-                truncatedLength = 190;
-                truncated = true;
-            }
-            int normalizedLength = ((truncatedLength / 19) + 1) * 19; // display 19 values by line
+            int normalizedLength = ((length / 19) + 1) * 19; // display 19 values by line
             for (int i = 0; i < normalizedLength; i++)
             {
                 if (i < length)
@@ -260,10 +265,6 @@ namespace wpi
                     characters = "";
                 }
             }
-            if (truncated)
-            {
-                Console.WriteLine("Displayed only the first {0} bytes of {1} bytes.", truncatedLength, length);
-            }
         }
 
         public void ReadPipe(byte[] buffer, int bytesToRead, out uint bytesRead)
@@ -280,9 +281,9 @@ namespace wpi
             if (!success)
                 throw new System.Exception("Failed to read pipe on WinUSB device.");
 
-            Console.WriteLine(">Received:");
-            printRaw(buffer, (int)bytesRead, false);
-            //printRaw(buffer, (int)bytesRead);
+            Console.Write(".");
+            //printRawFile(buffer, (int)bytesRead, false);
+            printRawConsole(buffer, (int)bytesRead, false);
         }
 
         public void WritePipe(byte[] buffer, int length)
@@ -290,9 +291,9 @@ namespace wpi
             uint bytesWritten;
             bool success;
 
-            Console.WriteLine("<Sent:");
-            printRaw(buffer, length, true);
-            //printRaw(buffer, length);
+            Console.Write(".");
+            //printRawFile(buffer, length, true);
+            printRawConsole(buffer, length, true);
 
             unsafe
             {

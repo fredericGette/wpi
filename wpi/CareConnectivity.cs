@@ -162,7 +162,7 @@ namespace wpi
 
         public static GPT parseNOKT(byte[] values, int length)
         {
-            if (length < 0x4408) // header (NOKT) + error code (2 bytes) + 34 sectors of 512 bytes
+            if (length < 6 + 2 + 34 * 512) // header (NOKT\0\0) + error code (2 bytes) + 34 sectors of 512 bytes
             {
                 Console.WriteLine("Response too short.");
                 return null;
@@ -183,7 +183,10 @@ namespace wpi
                 return null;
             }
 
-            return new GPT(values.Skip(8).Take(length - 8).ToArray(), length-8); // header + error code = 8 bytes
+            byte[] gptBinary = new byte[33 * 512]; // We keep only 33 sectors for the GPT: the first sector is the MBR.
+            System.Buffer.BlockCopy(values, 6 + 2 + 512 , gptBinary, 0, gptBinary.Length); // we skip header (6 bytes) + error code (2 bytes) + the first sector which is the MBR (512 bytes)
+
+            return new GPT(gptBinary, gptBinary.Length);
         }
 
         public static byte[] parseNOKXFRRRKH(byte[] values, int length)

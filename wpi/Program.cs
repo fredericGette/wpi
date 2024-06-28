@@ -149,7 +149,7 @@ namespace wpi
             File.WriteAllBytes("C:\\Users\\frede\\Documents\\programmer.bin", programmer);
             Console.WriteLine("Programmer size: {0} bytes.", programmer.Length);
 
-            //goto test1;
+            //goto repair_bricked_phone;
             // Look for a phone connected on a USB port and exposing interface
             // - known as "Apollo" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
             // - known as "New Combi" interface in WPInternals
@@ -312,7 +312,7 @@ namespace wpi
             CareConnectivity.parseNOKV(Buffer, (int)bytesRead);
 
             Console.WriteLine("\nRead GUID Partition Table (GPT)...");
-            byte[] ReadGPTCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x54 }; // NOKT = Read GPT
+            byte[] ReadGPTCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x54 }; // NOKT = Read 34 first sectors (MBR + GPT)
             CareConnectivityDeviceInterface.WritePipe(ReadGPTCommand, ReadGPTCommand.Length);
             CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             GPT gpt = CareConnectivity.parseNOKT(Buffer, (int)bytesRead);
@@ -545,7 +545,7 @@ namespace wpi
             CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
-            test1:
+            repair_bricked_phone:
             Buffer = new byte[0x8000];
             Guid guidEmergencyDeviceInterface = new Guid(GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE);
 
@@ -683,51 +683,72 @@ namespace wpi
                 ProgramExit(-3);
             }
 
+            // repair_bricked_phone: comment the 3 following lines
+            printLog("Flash HACK");
             Console.WriteLine("\nFlash the HACK partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", HackPartition.firstSector, hackPartitionContent.Length);
             Qualcomm.Flash((uint)HackPartition.firstSector * 512, hackPartitionContent, (uint)hackPartitionContent.Length, EmergencyDeviceInterface);
 
             // To minimize risk of brick we also flash unmodified partitions (MBR, SBL1, TZ, RPM, WINSECAPP)
             // Note: SBL1 is not really modified, just truncated by the HACK partition.
             byte[] ffuMBR = ffu.GetSectors(0, 1);
+            printLog("Flash MBR");
             Console.WriteLine("\nFlash the MBR partition (sector 0x0 ,size 0x{0:X} bytes)...", ffuMBR.Length);
             Qualcomm.Flash(0, ffuMBR, (uint)ffuMBR.Length, EmergencyDeviceInterface);
 
             byte[] ffuGPT = ffu.GetSectors(0x01, 0x22);
+            // repair_bricked_phone: invert the comment of the 4 following lines
             Console.WriteLine("\nFlash the GPT partition (sector 0x1 ,size 0x{0:X} bytes)...", gpt.GPTBuffer.Length);
+            printLog("Flash GPT");
             Qualcomm.Flash(0x200, gpt.GPTBuffer, 0x41FF, EmergencyDeviceInterface); // Bad bounds-check in the flash-loader prohibits to write the last byte.
             //Qualcomm.Flash(0x200, ffu.GetSectors(0x01, 0x22), 0x41FF, EmergencyDeviceInterface); // Bad bounds-check in the flash-loader prohibits to write the last byte.
 
-            Console.WriteLine("\nFlash the SBL2 partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", SBL2.firstSector * 512, ffuSBL2.Length);
+            // repair_bricked_phone: invert the comment of the 4 following lines
+            Console.WriteLine("\nFlash the SBL2 partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", SBL2.firstSector * 512, ffuSBL2.Length);
+            printLog("Flash SBL2");
             Qualcomm.Flash((uint)SBL2.firstSector * 512, ffuSBL2, (uint)ffuSBL2.Length, EmergencyDeviceInterface);
             //Qualcomm.Flash((uint)ffu.gpt.GetPartition("SBL2").firstSector * 512, ffu.GetPartition("SBL2"), (uint)ffu.GetPartition("SBL2").Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the SBL3 partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("SBL3").firstSector * 512, engeeniringSBL3.Length);
+            // repair_bricked_phone: invert the comment of the 4 following lines
+            Console.WriteLine("\nFlash the SBL3 partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", gpt.GetPartition("SBL3").firstSector * 512, engeeniringSBL3.Length);
+            printLog("Flash SBL3");
             Qualcomm.Flash((uint)gpt.GetPartition("SBL3").firstSector * 512, engeeniringSBL3, (uint)engeeniringSBL3.Length, EmergencyDeviceInterface);
             //Qualcomm.Flash((uint)ffu.gpt.GetPartition("SBL3").firstSector * 512, ffu.GetPartition("SBL3"), (uint)ffu.GetPartition("SBL3").Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the UEFI partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("UEFI").firstSector * 512, uefi.Binary.Length);
+            // repair_bricked_phone: invert the comment of the 4 following lines
+            Console.WriteLine("\nFlash the UEFI partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", gpt.GetPartition("UEFI").firstSector * 512, uefi.Binary.Length);
+            printLog("Flash UEFI");
             Qualcomm.Flash((uint)gpt.GetPartition("UEFI").firstSector * 512, uefi.Binary, (uint)uefi.Binary.Length, EmergencyDeviceInterface);
             //Qualcomm.Flash((uint)ffu.gpt.GetPartition("UEFI").firstSector * 512, ffu.GetPartition("UEFI"), (uint)ffu.GetPartition("UEFI").Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the SBL1 partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("SBL1").firstSector * 512, ffuSBL1.Length);
+            // repair_bricked_phone: invert the comment of the 4 following lines
+            Console.WriteLine("\nFlash the SBL1 partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", gpt.GetPartition("SBL1").firstSector * 512, ffuSBL1.Length);
+            printLog("Flash SBL1");
             Qualcomm.Flash((uint)gpt.GetPartition("SBL1").firstSector * 512, ffuSBL1, (uint)(gpt.GetPartition("SBL1").lastSector - gpt.GetPartition("SBL1").firstSector) * 512, EmergencyDeviceInterface); // SBL1 new size is 1 sector less than orignal size.
             //Qualcomm.Flash((uint)ffu.gpt.GetPartition("SBL1").firstSector * 512, ffu.GetPartition("SBL1"), (uint)ffu.GetPartition("SBL1").Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the TZ partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("TZ").firstSector * 512, ffu.GetPartition("TZ").Length);
+            // repair_bricked_phone: invert the comment of the 4 following lines
+            Console.WriteLine("\nFlash the TZ partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", gpt.GetPartition("TZ").firstSector * 512, ffu.GetPartition("TZ").Length);
+            printLog("Flash TZ");
             Qualcomm.Flash((uint)gpt.GetPartition("TZ").firstSector * 512, ffu.GetPartition("TZ"), (uint)ffu.GetPartition("TZ").Length, EmergencyDeviceInterface);
             //Qualcomm.Flash((uint)ffu.gpt.GetPartition("TZ").firstSector * 512, ffu.GetPartition("TZ"), (uint)ffu.GetPartition("TZ").Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the RPM partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("RPM").firstSector * 512, ffu.GetPartition("RPM").Length);
+            // repair_bricked_phone: invert the comment of the 4 following lines
+            Console.WriteLine("\nFlash the RPM partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", gpt.GetPartition("RPM").firstSector * 512, ffu.GetPartition("RPM").Length);
+            printLog("Flash RPM");
             Qualcomm.Flash((uint)gpt.GetPartition("RPM").firstSector * 512, ffu.GetPartition("RPM"), (uint)ffu.GetPartition("RPM").Length, EmergencyDeviceInterface);
             //Qualcomm.Flash((uint)ffu.gpt.GetPartition("RPM").firstSector * 512, ffu.GetPartition("RPM"), (uint)ffu.GetPartition("RPM").Length, EmergencyDeviceInterface);
 
             // Workaround for bad bounds-check in flash-loader
             UInt32 WINSECAPPLength = (UInt32)ffu.GetPartition("WINSECAPP").Length;
+            // repair_bricked_phone: invert the comment of the 2 following lines
             UInt32 WINSECAPPStart = (UInt32)gpt.GetPartition("WINSECAPP").firstSector * 512;
             //UInt32 WINSECAPPStart = (UInt32)ffu.gpt.GetPartition("WINSECAPP").firstSector * 512;
             if ((WINSECAPPStart + WINSECAPPLength) > 0x1E7FE00)
                 WINSECAPPLength = 0x1E7FE00 - WINSECAPPStart;
-            Console.WriteLine("\nFlash the WINSECAPP partition (sector 0x{0:X} ,size 0x{0:X} bytes)...", gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP").Length);
+            
+            // repair_bricked_phone: invert the comment of the 4 following lines
+            Console.WriteLine("\nFlash the WINSECAPP partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP").Length);
+            printLog("Flash WINSECAPP");
             Qualcomm.Flash((uint)gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP"), WINSECAPPLength, EmergencyDeviceInterface);
             //Qualcomm.Flash((uint)ffu.gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP"), WINSECAPPLength, EmergencyDeviceInterface);
 
@@ -884,6 +905,14 @@ namespace wpi
             {
                 Console.WriteLine("Displayed only the first {0} bytes of {1} bytes.", truncatedLength, length);
             }
+        }
+
+        public static void printLog(string text)
+        {
+            //StreamWriter w = File.AppendText(Environment.ExpandEnvironmentVariables("%ALLUSERSPROFILE%\\WPInternals\\wpi3.log"));
+            //w.WriteLine(text);
+            //w.Flush();
+            //w.Close();
         }
 
     }

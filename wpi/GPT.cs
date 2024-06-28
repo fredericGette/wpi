@@ -20,27 +20,13 @@ namespace wpi
         {
             partitions = new List<Partition>();
 
-            if (length < 0x4400) // 34 sectors of 512 bytes
+            if (length < 33 * 512) // 33 sectors of 512 bytes
             {
                 throw new System.Exception("Byte array too short.");
             }
             this.GPTBuffer = values;
 
-            uint sectorSize;
-            if (length == 0x4400) // 34 sectors of 0x200 bytes.
-            {
-                sectorSize = 512; // 0x200
-            }
-            else if (length == 0x6000) // 6 sectors of 0x1000 bytes.
-            {
-                sectorSize = 4096; // 0x1000
-            }
-            else
-            {
-                throw new System.Exception("Unsupported sector size.");
-            }
-
-            // first sector is Master Boot Record (MBR)
+            uint sectorSize = 512; // 0x200
 
             byte[] headerPattern = new byte[] { 0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54 }; // "EFI PART"
             HeaderOffset = -1;
@@ -57,9 +43,9 @@ namespace wpi
             }
 
             HeaderSize = (uint)(values[HeaderOffset + 15] << 24) + (uint)(values[HeaderOffset + 14] << 16) + (uint)(values[HeaderOffset + 13] << 8) + values[HeaderOffset + 12];
-            TableOffset = (uint)HeaderOffset + sectorSize;
-            ulong firstUsableSector = (ulong)(values[HeaderOffset + 47] << 56) + (ulong)(values[HeaderOffset + 46] << 48) + (ulong)(values[HeaderOffset + 45] << 40) + (ulong)(values[HeaderOffset + 44] << 32) + (ulong)(values[HeaderOffset + 43] << 24) + (ulong)(values[HeaderOffset + 42] << 16) + (ulong)(values[HeaderOffset + 41] << 8) + values[HeaderOffset + 40];
-            ulong lastUsableSector = (ulong)(values[HeaderOffset + 55] << 56) + (ulong)(values[HeaderOffset + 54] << 48) + (ulong)(values[HeaderOffset + 53] << 40) + (ulong)(values[HeaderOffset + 52] << 32) + (ulong)(values[HeaderOffset + 51] << 24) + (ulong)(values[HeaderOffset + 50] << 16) + (ulong)(values[HeaderOffset + 49] << 8) + values[HeaderOffset + 48];
+            TableOffset = (uint)HeaderOffset + sectorSize;  // HeaderOffset should be 0
+            ulong firstUsableSector = ((ulong)values[HeaderOffset + 47] << 56) + ((ulong)values[HeaderOffset + 46] << 48) + ((ulong)values[HeaderOffset + 45] << 40) + ((ulong)values[HeaderOffset + 44] << 32) + ((ulong)values[HeaderOffset + 43] << 24) + ((ulong)values[HeaderOffset + 42] << 16) + ((ulong)values[HeaderOffset + 41] << 8) + (ulong)values[HeaderOffset + 40];
+            ulong lastUsableSector = ((ulong)values[HeaderOffset + 55] << 56) + ((ulong)values[HeaderOffset + 54] << 48) + ((ulong)values[HeaderOffset + 53] << 40) +((ulong)values[HeaderOffset + 52] << 32) + ((ulong)values[HeaderOffset + 51] << 24) + ((ulong)values[HeaderOffset + 50] << 16) + ((ulong)values[HeaderOffset + 49] << 8) + (ulong)values[HeaderOffset + 48];
             uint maxPartitions = (uint)(values[HeaderOffset + 83] << 24) + (uint)(values[HeaderOffset + 82] << 16) + (uint)(values[HeaderOffset + 81] << 8) + values[HeaderOffset + 80];
             PartitionEntrySize = (uint)(values[HeaderOffset + 87] << 24) + (uint)(values[HeaderOffset + 86] << 16) + (uint)(values[HeaderOffset + 85] << 8) + values[HeaderOffset + 84];
             TableSize = maxPartitions * PartitionEntrySize;
@@ -81,9 +67,9 @@ namespace wpi
                 Buffer.BlockCopy(values, (int)partitionOffset + 16, guidBuffer, 0, 16);
                 Guid partitionGuid = new Guid(guidBuffer);
 
-                ulong firstSector = (ulong)(values[partitionOffset + 39] << 56) + (ulong)(values[partitionOffset + 38] << 48) + (ulong)(values[partitionOffset + 37] << 40) + (ulong)(values[partitionOffset + 36] << 32) + (ulong)(values[partitionOffset + 35] << 24) + (ulong)(values[partitionOffset + 34] << 16) + (ulong)(values[partitionOffset + 33] << 8) + values[partitionOffset + 32];
-                ulong lastSector = (ulong)(values[partitionOffset + 47] << 56) + (ulong)(values[partitionOffset + 46] << 48) + (ulong)(values[partitionOffset + 45] << 40) + (ulong)(values[partitionOffset + 44] << 32) + (ulong)(values[partitionOffset + 43] << 24) + (ulong)(values[partitionOffset + 42] << 16) + (ulong)(values[partitionOffset + 41] << 8) + values[partitionOffset + 40];
-                ulong attributes = (ulong)(values[partitionOffset + 55] << 56) + (ulong)(values[partitionOffset + 54] << 48) + (ulong)(values[partitionOffset + 45] << 53) + (ulong)(values[partitionOffset + 52] << 32) + (ulong)(values[partitionOffset + 51] << 24) + (ulong)(values[partitionOffset + 50] << 16) + (ulong)(values[partitionOffset + 49] << 8) + values[partitionOffset + 48];
+                ulong firstSector = ((ulong)values[partitionOffset + 39] << 56) + ((ulong)values[partitionOffset + 38] << 48) + ((ulong)values[partitionOffset + 37] << 40) + ((ulong)values[partitionOffset + 36] << 32) + ((ulong)values[partitionOffset + 35] << 24) + ((ulong)values[partitionOffset + 34] << 16) + ((ulong)values[partitionOffset + 33] << 8) + (ulong)values[partitionOffset + 32];
+                ulong lastSector = ((ulong)values[partitionOffset + 47] << 56) + ((ulong)values[partitionOffset + 46] << 48) + ((ulong)values[partitionOffset + 45] << 40) + ((ulong)values[partitionOffset + 44] << 32) + (ulong)(values[partitionOffset + 43] << 24) + ((ulong)values[partitionOffset + 42] << 16) + ((ulong)values[partitionOffset + 41] << 8) + (ulong)values[partitionOffset + 40];
+                ulong attributes = ((ulong)values[partitionOffset + 55] << 56) + ((ulong)values[partitionOffset + 54] << 48) + ((ulong)values[partitionOffset + 53] << 40) + ((ulong)values[partitionOffset + 52] << 32) + ((ulong)values[partitionOffset + 51] << 24) + ((ulong)values[partitionOffset + 50] << 16) + ((ulong)values[partitionOffset + 49] << 8) + (ulong)values[partitionOffset + 48];
 
                 byte[] nameBuffer = new byte[72];  // 36 UTF-16 characters
                 Buffer.BlockCopy(values, (int)partitionOffset + 56, nameBuffer, 0, 72);
@@ -158,18 +144,26 @@ namespace wpi
                 PartitionOffset += PartitionEntrySize;
             }
 
-            
+            // Compute the CRC of the partition table first, because this CRC in included in the CRC of the header
+            uint crcTable = CRC32.CalculateChecksum(GPTBuffer, TableOffset, TableSize);
+            GPTBuffer[HeaderOffset + 88] = (byte)(crcTable & 0xFF);
+            GPTBuffer[HeaderOffset + 89] = (byte)((crcTable >> 8) & 0xFF);
+            GPTBuffer[HeaderOffset + 90] = (byte)((crcTable >> 16) & 0xFF);
+            GPTBuffer[HeaderOffset + 91] = (byte)((crcTable >> 24) & 0xFF);
+
+            // We must zeroing the CRC header before computing it 
+            // (otherwise the computed CRC is wrong)
+            GPTBuffer[HeaderOffset + 16] = 0;
+            GPTBuffer[HeaderOffset + 17] = 0;
+            GPTBuffer[HeaderOffset + 18] = 0;
+            GPTBuffer[HeaderOffset + 19] = 0;
+
             uint crcHeader = CRC32.CalculateChecksum(GPTBuffer, (uint)HeaderOffset, HeaderSize);
             GPTBuffer[HeaderOffset + 16] = (byte)(crcHeader & 0xFF);
             GPTBuffer[HeaderOffset + 17] = (byte)((crcHeader >> 8) & 0xFF);
             GPTBuffer[HeaderOffset + 18] = (byte)((crcHeader >> 16) & 0xFF);
             GPTBuffer[HeaderOffset + 19] = (byte)((crcHeader >> 24) & 0xFF);
 
-            uint crcTable = CRC32.CalculateChecksum(GPTBuffer, TableOffset, TableSize);
-            GPTBuffer[HeaderOffset + 88] = (byte)(crcHeader & 0xFF);
-            GPTBuffer[HeaderOffset + 89] = (byte)((crcHeader >> 8) & 0xFF);
-            GPTBuffer[HeaderOffset + 90] = (byte)((crcHeader >> 16) & 0xFF);
-            GPTBuffer[HeaderOffset + 91] = (byte)((crcHeader >> 24) & 0xFF);
         }
 
         public Partition GetPartition(string Name)
