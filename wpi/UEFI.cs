@@ -40,9 +40,11 @@ namespace wpi
         private UInt32 VolumeHeaderOffset = 40;
 
 
-        public UEFI(byte[] UefiBinary)
+        public UEFI(byte[] UefiBinary, bool parse)
         {
             Binary = UefiBinary;
+
+            if (!parse) return; // We dont need to parse the content of the UEFI partition (certainly because we are in REPAIR mode).
 
             // Find VolumeHeaderOffset
             byte[] VolumeHeaderMagic = new byte[] { 0x5F, 0x46, 0x56, 0x48 }; // _FVH
@@ -179,7 +181,7 @@ namespace wpi
             uint DecompressedVolumeHeaderSize = (uint)(DecompressedImage[DecompressedVolumeHeaderOffset + 49] << 8) + DecompressedImage[DecompressedVolumeHeaderOffset + 48];
 
             // The files in this decompressed volume are the real EFI's.
-            Console.WriteLine("\nUEFI files:");
+            if (Program.verbose) Console.WriteLine("\nUEFI files:");
             UInt32 DecompressedFileHeaderOffset = DecompressedVolumeHeaderOffset + DecompressedVolumeHeaderSize;
             EFI CurrentEFI;
             do
@@ -256,7 +258,7 @@ namespace wpi
                 // so that alignment can be ignored.
                 DecompressedFileHeaderOffset = Align(DecompressedVolumeHeaderOffset + DecompressedVolumeHeaderSize, DecompressedFileHeaderOffset, 8);
 
-                Console.WriteLine("\t{0,-30} {1,6} bytes", CurrentEFI.Name, CurrentEFI.Size);
+                if (Program.verbose) Console.WriteLine("\t{0,-30} {1,6} bytes", CurrentEFI.Name, CurrentEFI.Size);
 
                 EFIs.Add(CurrentEFI);
             }

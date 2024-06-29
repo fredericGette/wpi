@@ -182,60 +182,15 @@ namespace wpi
             }
         }
 
-        public static void printRawFile(byte[] values, int length, bool write)
-        {
-            StreamWriter w = File.AppendText(Environment.ExpandEnvironmentVariables("%ALLUSERSPROFILE%\\WPInternals\\wpi3.log"));
-            if (write)
-            {
-                w.WriteLine("< {0} bytes", length);
-                w.Flush();
-            }
-            else
-            {
-                w.WriteLine("> {0} bytes", length);
-                w.Flush();
-            }
-            string hex = "";
-            bool flushed = false;
-            for (int i = 0; i < length; i++)
-            {
-                hex += values[i].ToString("X2") + " ";
-                flushed = false;
-
-                if ((i + 1) % 36 == 0)
-                {
-                    w.WriteLine(hex);
-                    w.Flush();
-                    flushed = true;
-                    hex = "";
-                }
-            }
-            if (!flushed)
-            {
-                w.WriteLine(hex);
-                w.Flush();
-            }
-            w.Close();
-        }
-
         private void printRawConsole(byte[] values, int length, bool write)
         {
             if (write)
             {
-                Console.Write("< {0} bytes", length);
+                Console.WriteLine("< {0} bytes", length);
             }
             else
             {
-                Console.Write("> {0} bytes", length);
-            }
-            if (length > 32)
-            {
-                Console.WriteLine(" Too long, not displayed.", length);
-                return;
-            }
-            else
-            {
-                Console.WriteLine("");
+                Console.WriteLine("> {0} bytes", length);
             }
 
             string characters = "";
@@ -281,9 +236,14 @@ namespace wpi
             if (!success)
                 throw new System.Exception("Failed to read pipe on WinUSB device.");
 
-            Console.Write(".");
-            //printRawFile(buffer, (int)bytesRead, false);
-            printRawConsole(buffer, (int)bytesRead, false);
+            if (Program.verbose)
+            {
+                printRawConsole(buffer, (int)bytesRead, false);
+            }
+            else
+            {
+                Console.Write(".");
+            }
         }
 
         public void WritePipe(byte[] buffer, int length)
@@ -291,9 +251,14 @@ namespace wpi
             uint bytesWritten;
             bool success;
 
-            Console.Write(".");
-            //printRawFile(buffer, length, true);
-            printRawConsole(buffer, length, true);
+            if (Program.verbose)
+            {
+                printRawConsole(buffer, length, true);
+            }
+            else
+            {
+                Console.Write(".");
+            }
 
             unsafe
             {

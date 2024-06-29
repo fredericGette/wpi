@@ -55,9 +55,12 @@ namespace wpi
             }
 
             uint partitionOffset = TableOffset;
-            Console.WriteLine("\nPartition name                       firstSect. lastSect. Attributes");
-            Console.WriteLine("\tPartition type GUID");
-            Console.WriteLine("\tPartition GUID");
+            if (Program.verbose)
+            {
+                Console.WriteLine("\nPartition name                       firstSect. lastSect. Attributes");
+                Console.WriteLine("\tPartition type GUID");
+                Console.WriteLine("\tPartition GUID");
+            }
             while (partitionOffset < TableOffset + TableSize)
             {
                 byte[] guidBuffer = new byte[16];
@@ -79,9 +82,12 @@ namespace wpi
 
                 if (firstSector != 0 && lastSector != 0)
                 {
-                    Console.WriteLine("{0} 0x{1:X6} - 0x{2:X6}  0x{3:X16}", name.PadRight(36, ' '), firstSector, lastSector, attributes);
-                    Console.WriteLine("\t{0}", partitionTypeGuid.ToString().ToUpper());
-                    Console.WriteLine("\t{0}\n", partitionGuid.ToString().ToUpper());
+                    if (Program.verbose)
+                    {
+                        Console.WriteLine("{0} 0x{1:X6} - 0x{2:X6}  0x{3:X16}", name.PadRight(36, ' '), firstSector, lastSector, attributes);
+                        Console.WriteLine("\t{0}", partitionTypeGuid.ToString().ToUpper());
+                        Console.WriteLine("\t{0}\n", partitionGuid.ToString().ToUpper());
+                    }
 
                     Partition partition = new Partition();
                     partition.firstSector = firstSector;
@@ -105,8 +111,6 @@ namespace wpi
             UInt32 PartitionOffset = TableOffset;
             foreach (Partition CurrentPartition in partitions)
             {
-                Console.WriteLine("\tProcessing partition {0}", CurrentPartition.name);
-
                 Buffer.BlockCopy(CurrentPartition.partitionTypeGuid.ToByteArray(), 0, GPTBuffer, (int)PartitionOffset, 16);
                 Buffer.BlockCopy(CurrentPartition.partitionGuid.ToByteArray(), 0, GPTBuffer, (int)PartitionOffset+16, 16);
 

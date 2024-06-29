@@ -104,7 +104,6 @@ namespace wpi
 
                 int subblockID = values[subblockOffset];
                 int subblockLength = (values[subblockOffset + 1] << 8) + values[subblockOffset + 2];
-                Console.WriteLine("\tID: 0x{0:X2} size: {1} bytes", subblockID, subblockLength);
                 subblockOffset += subblockLength + 3; // ID (1 byte) + Length (2 bytes)
             }
         }
@@ -158,6 +157,16 @@ namespace wpi
                     break;
             }
             Console.WriteLine("eMMC manufacturer: {0}", Manufacturer);
+            if ("Samsung".Equals(Manufacturer))
+            {
+                Console.WriteLine("WARNING! Samsung eMMC can become unusable after the flash operation!");
+                Console.Write("Input Y + Enter if you want to continue:");
+                string input = Console.ReadLine();
+                if (!"Y".Equals(input))
+                {
+                    Environment.Exit(-1);
+                }
+            }
         }
 
         public static GPT parseNOKT(byte[] values, int length)
