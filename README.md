@@ -16,7 +16,7 @@ To unlock the bootloader you have to set `--mode=UNLOCK` and pass 3 files in arg
 
 ![](wpi02.png)
 
-The optional parameter `--verbose` activates the display of some insights (for example the list of partitions of the GPT) but also all the data exchanged between the host computer and the phone (including the content of the flashed partitions). If you activate this optionm I advise to redirect the output into a file (**more than 35GB are logged when you unlock a phone !**).
+The optional parameter `--verbose` activates the display of some insights (for example the list of partitions of the GPT) but also all the data exchanged between the host computer and the phone (including the content of the flashed partitions). If you activate this option I advise to redirect the output into a file (**more than 35GB are logged when you unlock a phone !**).
 
 Extract of _verbose_ log:
 ```
