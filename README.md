@@ -60,3 +60,10 @@ E6 2A F8 99 94 06 4F 77 CD 3B C1 68 29 50 3B DF 9A 3D 50  .*....Ow.;.h)P;..=P
 6D 3F AC EC AE F3 F8 08 C8 68 FD                          m?.......h.
 Phone Root Hash Key (256 bits): F771E62AF89994064F77CD3BC16829503BDF9A3D506D3FACECAEF3F808C868FD
 ```
+
+## Drivers required
+
+We use USB to establish a communication between the host computer and the phone. And 3 [WinUSB](https://en.wikipedia.org/wiki/WinUSB) drives have to be installed in the host computer. Each of this driver is used at a different point of the unlock process.  
+- WinUsbCompatIdInstaller.msi to communicate with the Windows Phone OS. The phone exposes the USB device VID_0421&PID_0661
+- WinUsbDriversExt.msi to communicate with the UEFI applications. The phone exposes the USB device VID_0421&PID_066E
+- EmergencyDownloadDriver.msi to communicate with the Primary Boot Loader and the Programmer. The phone exposes the USB device VID_05C6&PID_9008
