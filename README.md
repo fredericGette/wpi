@@ -66,3 +66,24 @@ We use USB to establish a communication between the host computer and the phone.
 - WinUsbCompatIdInstaller.msi to communicate with the Windows Phone OS. The phone exposes the USB device VID_0421&PID_0661
 - WinUsbDriversExt.msi to communicate with the UEFI applications. The phone exposes the USB device VID_0421&PID_066E
 - EmergencyDownloadDriver.msi to communicate with the Primary Boot Loader and the Programmer. The phone exposes the USB device VID_05C6&PID_9008
+
+## Unlock procedure
+
+Everything is done in order to make impossible what we want to do: unlock the phone to execute untrusted codes.
+But nevertheless we can unlock the phone thanks to the following points:
+
+- The usage of an official programmer.
+- This official programmer does not verify what is flashed into the phone.
+
+But most of all, this is possible thanks to the creator of [WPInternals](https://github.com/ReneLergner/WPinternals) who, I guess, spent a lot of time an energy in this project. Im very grateful to him!
+
+The big picture of the unlock procedure is the following:
+
+1. Go into Emergency DownLoad mode by erasing the GUID Partition Table (there's maybe other means to into Emergency Download mode by doing some electronic modifications, but the solution used by WPInternals does not require any electronic skills).
+2. Start the official programmer and use it to flash a modified version of the SBL2, SBL3 and UEFI partitions (these modified versions don't check the integrity of the programs they execute, unlike their official versions).
+3. Allow the execution of the modified SBL2 partition by adding an additional partition named "HACK" into the last sector of the partition SBL1. Currently, I don't know how this HACK partition bypasses the integrity check done by SBL1.
+
+
+
+
+
