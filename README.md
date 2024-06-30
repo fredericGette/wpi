@@ -62,7 +62,7 @@ Phone Root Hash Key (256 bits): F771E62AF89994064F77CD3BC16829503BDF9A3D506D3FAC
 
 ## Drivers required
 
-We use USB to establish a communication between the host computer and the phone. 3 [WinUSB](https://en.wikipedia.org/wiki/WinUSB) drivers have to be installed in the host computer. Each of this driver is used at a different point of the unlock process (usually these drivers are installed with the Windows Device Recovery Tool (WDRT).
+We use USB to establish a communication between the host computer and the phone. 3 [WinUSB](https://en.wikipedia.org/wiki/WinUSB) drivers have to be installed in the host computer. Each of these drivers is used at a different point of the unlock process (usually these drivers are installed with the Windows Device Recovery Tool (WDRT).
 - WinUsbCompatIdInstaller.msi to communicate with the Windows Phone OS. The phone exposes the USB device VID_0421&PID_0661
 - WinUsbDriversExt.msi to communicate with the UEFI applications. The phone exposes the USB device VID_0421&PID_066E
 - EmergencyDownloadDriver.msi to communicate with the Primary Boot Loader and the Programmer. The phone exposes the USB device VID_05C6&PID_9008
