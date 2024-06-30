@@ -1,6 +1,6 @@
 # wpi
 
-The goal was to create a command line version of [WPInternals](https://github.com/ReneLergner/WPinternals) in order to understand how to unlock the bootloader and "root" the Windows Phone OS of Nokia Lumia phones (this last steop is still a Work-In-Progress).  
+The goal was to create a command line version of [WPInternals](https://github.com/ReneLergner/WPinternals) in order to understand how to unlock the bootloader and "root" the Windows Phone OS of Nokia Lumia phones (this last step is still a Work-In-Progress).  
 
 > [!CAUTION]
 > Only Lumia 520 is supported.
