@@ -170,6 +170,39 @@ namespace wpi
             }
         }
 
+        public static bool parseNOKXFRSS(byte[] values, int length)
+        {
+            if (length < 25) // header + secury status (8bytes)
+            {
+                Console.WriteLine("Response too short.");
+                throw new System.Exception();
+            }
+
+            // First 4 values must be NOKX
+            bool isNOKX = values[0] == 'N' && values[1] == 'O' && values[2] == 'K' && values[3] == 'X';
+            if (!isNOKX)
+            {
+                Console.WriteLine("Not NOKX response.");
+                throw new System.Exception();
+            }
+
+            // note: values[16] contains the size of the response
+
+            byte IsTestDevice = values[17];
+            byte PlatformSecureBootStatus = values[18];
+            byte SecureFfuEfuseStatus = values[19];
+            byte DebugStatus = values[20];
+            byte RdcStatus = values[21];
+            byte AuthenticationStatus = values[22];
+            byte UefiSecureBootStatus = values[23];
+            byte CryptoHardwareKey = values[24];
+
+            Console.WriteLine("\tSecure boot: {0}", PlatformSecureBootStatus == 1 ? "Enabled" : "Disabled");
+            Console.WriteLine("\tBootloader security: {0}", SecureFfuEfuseStatus == 1 ? "Enabled" : "Disabled");
+
+            return PlatformSecureBootStatus == 1;
+        }
+
         public static GPT parseNOKT(byte[] values, int length)
         {
             if (length < 6 + 2 + 34 * 512) // header (NOKT\0\0) + error code (2 bytes) + 34 sectors of 512 bytes

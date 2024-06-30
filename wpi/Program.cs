@@ -330,6 +330,22 @@ namespace wpi
                 ProgramExit(-1);
             }
 
+            // Read the Security Status of the phone
+            Console.WriteLine("\nRead Security Status of the phone...");
+            byte[] ReadSSCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x46, 0x52, 0x00, 0x53, 0x53, 0x00, 0x00 }; // NOKXFR\0SS\0\0 
+            CareConnectivityDeviceInterface.WritePipe(ReadSSCommand, ReadSSCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+            bool secureBoot = CareConnectivity.parseNOKXFRSS(Buffer, (int)bytesRead);
+            if (!secureBoot)
+            {
+                Console.WriteLine("**** Bootloader is already unlocked ****");
+                Console.WriteLine("Continue booting in \"normal\" mode.");
+                byte[] RebootNormalCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR = Reboot
+                CareConnectivityDeviceInterface.WritePipe(RebootNormalCommand, RebootNormalCommand.Length);
+                CareConnectivityDeviceInterface.Close();
+                ProgramExit(-1);
+            }
+
             ////////////////////////////////////////////////////////////////////////////
             // UNLOCK mode 
             // Reboot in bootloader mode to read the content of GUIG Partition Table (GPT) of the phone
@@ -894,7 +910,7 @@ namespace wpi
 
         private static void ProgramExit(int exitCode)
         {
-            Console.ReadLine();
+            //Console.ReadLine();
             Environment.Exit(exitCode);
         }
 
