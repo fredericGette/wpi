@@ -75,7 +75,7 @@ But nevertheless we can unlock the phone thanks to the following points:
 - The usage of an official programmer.
 - This official programmer does not verify what is flashed into the phone.
 
-But most of all, this is possible thanks to the creator of [WPInternals](https://github.com/ReneLergner/WPinternals) who, I guess, spent a lot of time an energy in this project. Im very grateful to him!
+But most of all, this is possible thanks to the creator of [WPInternals](https://github.com/ReneLergner/WPinternals) who, I guess, spent a lot of time and energy in this project. Im very grateful to him!
 
 The big picture of the unlock procedure is the following:
 
