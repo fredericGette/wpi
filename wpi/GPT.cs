@@ -42,12 +42,12 @@ namespace wpi
                 throw new System.Exception("Header not found.");
             }
 
-            HeaderSize = (uint)(values[HeaderOffset + 15] << 24) + (uint)(values[HeaderOffset + 14] << 16) + (uint)(values[HeaderOffset + 13] << 8) + values[HeaderOffset + 12];
+            HeaderSize = ((uint)values[HeaderOffset + 15] << 24) + ((uint)values[HeaderOffset + 14] << 16) + ((uint)values[HeaderOffset + 13] << 8) + values[HeaderOffset + 12];
             TableOffset = (uint)HeaderOffset + sectorSize;  // HeaderOffset should be 0
             ulong firstUsableSector = ((ulong)values[HeaderOffset + 47] << 56) + ((ulong)values[HeaderOffset + 46] << 48) + ((ulong)values[HeaderOffset + 45] << 40) + ((ulong)values[HeaderOffset + 44] << 32) + ((ulong)values[HeaderOffset + 43] << 24) + ((ulong)values[HeaderOffset + 42] << 16) + ((ulong)values[HeaderOffset + 41] << 8) + (ulong)values[HeaderOffset + 40];
             ulong lastUsableSector = ((ulong)values[HeaderOffset + 55] << 56) + ((ulong)values[HeaderOffset + 54] << 48) + ((ulong)values[HeaderOffset + 53] << 40) +((ulong)values[HeaderOffset + 52] << 32) + ((ulong)values[HeaderOffset + 51] << 24) + ((ulong)values[HeaderOffset + 50] << 16) + ((ulong)values[HeaderOffset + 49] << 8) + (ulong)values[HeaderOffset + 48];
-            uint maxPartitions = (uint)(values[HeaderOffset + 83] << 24) + (uint)(values[HeaderOffset + 82] << 16) + (uint)(values[HeaderOffset + 81] << 8) + values[HeaderOffset + 80];
-            PartitionEntrySize = (uint)(values[HeaderOffset + 87] << 24) + (uint)(values[HeaderOffset + 86] << 16) + (uint)(values[HeaderOffset + 85] << 8) + values[HeaderOffset + 84];
+            uint maxPartitions = ((uint)values[HeaderOffset + 83] << 24) + ((uint)values[HeaderOffset + 82] << 16) + ((uint)values[HeaderOffset + 81] << 8) + values[HeaderOffset + 80];
+            PartitionEntrySize = ((uint)values[HeaderOffset + 87] << 24) + ((uint)values[HeaderOffset + 86] << 16) + ((uint)values[HeaderOffset + 85] << 8) + values[HeaderOffset + 84];
             TableSize = maxPartitions * PartitionEntrySize;
             if (TableOffset + TableSize > length)
             {

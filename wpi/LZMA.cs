@@ -14,7 +14,7 @@ namespace wpi
             byte[] Properties = new byte[5];
             Buffer.BlockCopy(Input, (int)Offset, Properties, 0, 5);
 
-            UInt64 OutputSize = (ulong)(Input[Offset + 12] << 56) + (ulong)(Input[Offset + 11] << 48) + (ulong)(Input[Offset + 10] << 40) + (ulong)(Input[Offset + 9] << 32) + (ulong)(Input[Offset + 8] << 24) + (ulong)(Input[Offset + 7] << 16) + (ulong)(Input[Offset + 6] << 8) + Input[Offset + 5];
+            UInt64 OutputSize = ((ulong)Input[Offset + 12] << 56) + ((ulong)Input[Offset + 11] << 48) + ((ulong)Input[Offset + 10] << 40) + ((ulong)Input[Offset + 9] << 32) + ((ulong)Input[Offset + 8] << 24) + ((ulong)Input[Offset + 7] << 16) + ((ulong)Input[Offset + 6] << 8) + Input[Offset + 5];
 
             SevenZip.Compression.LZMA.Decoder Coder = new SevenZip.Compression.LZMA.Decoder();
             Coder.SetDecoderProperties(Properties);

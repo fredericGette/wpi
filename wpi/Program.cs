@@ -33,24 +33,28 @@ namespace wpi
             if (!"REPAIR".Equals(mode) && !"UNLOCK".Equals(mode))
             {
                 Console.WriteLine("Unkown \"mode={0}\". Only UNLOCK and REPAIR are available.", mode);
+                printUsage();
                 ProgramExit(-1);
             }
 
             if (ffuPath == null || !File.Exists(ffuPath))
             {
                 Console.WriteLine("FFU file not found.");
+                printUsage();
                 ProgramExit(-1);
             }
 
             if (!"REPAIR".Equals(mode) && (engeeniringSBL3Path == null || !File.Exists(engeeniringSBL3Path)))
             {
                 Console.WriteLine("Raw image of an engeeniring SBL3 no found.");
+                printUsage();
                 ProgramExit(-1);
             }
 
             if (programmerPath == null || !File.Exists(programmerPath))
             {
                 Console.WriteLine("Emergency programmer no found.");
+                printUsage();
                 ProgramExit(-1);
             }
 
@@ -160,7 +164,6 @@ namespace wpi
             // Prepare the content of the "HACK" partition that is going to replace the last sector of the SBL1 partition.
             Console.Write("\nGenerate the content of the \"HACK\" partition");
             hackContent = Qualcomm.createHACK(sbl1Content, sbl2Content);
-            Console.WriteLine();
 
             // We need a "engeeniring" SBL3 to enable "Mass Storage" mode (it will be required to patch windows files)
             engeeniringSbl3Content = Qualcomm.loadSBL3img(engeeniringSBL3Path);
@@ -205,7 +208,6 @@ namespace wpi
             uefiContent = new UEFI(ffu.GetPartition("UEFI"), true);
             Console.Write("Prepare a patched version of the UEFI partition.");
             uefiContent.Patch();
-            Console.WriteLine();
 
             ////////////////////////////////////////////////////////////////////////////
             // UNLOCK mode 
@@ -218,8 +220,7 @@ namespace wpi
             // - known as "New Combi" interface in WPInternals
             // This interface allows to send jsonRPC (Remote Procedure Call) (to reboot the phone in flash mode for example).
             // Only a phone in "normal" mode exposes this interface. 
-            Console.WriteLine("\nLook for a phone connected on a USB port");
-            Console.Write("and exposing \"Apollo\" device interface ( = \"normal\" mode )");
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Apollo\" device interface ( = \"normal\" mode )");
             List<string> devicePaths;
             do
             {
@@ -227,14 +228,14 @@ namespace wpi
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_APOLLO_DEVICE_INTERFACE));
             } while (devicePaths.Count == 0);
-            Console.WriteLine("\n");
+            Console.WriteLine();
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
                 ProgramExit(-1);
             }
             string devicePath = devicePaths[0];
-            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
             if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_NORMAL_MODE, StringComparison.OrdinalIgnoreCase) == 0)
             {
@@ -244,7 +245,7 @@ namespace wpi
                 ProgramExit(-1);
             }
 
-            Console.WriteLine("Switch to \"flash\" mode...");
+            Console.WriteLine("\nSwitch to \"flash\" mode...");
 
             // Open the interface
             // It contains 2 pipes :
@@ -260,7 +261,6 @@ namespace wpi
             uint bytesRead;
             byte[] Buffer = new byte[0x8000]; // Must be large enough to contain the GPT (see later)
             ApolloDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
-            string resultString = System.Text.ASCIIEncoding.ASCII.GetString(Buffer, 0, (int)bytesRead);
             ApolloDeviceInterface.Close();
 
             Console.WriteLine("\nWait 15s until the phone reboots in \"flash\" mode...");
@@ -280,22 +280,21 @@ namespace wpi
             // this interface is also exposed when the phone is in "normal" mode.
             // But in "normal" mode the PID of the device is 0x0661
             // Whereas in "flash" or "bootloader" mode the PID of the device is 0x066E
-            Console.WriteLine("Look for a phone connected on a USB port");
-            Console.Write("and exposing \"Care Connectivity\" device interface.");
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface.");
             do
             {
                 Thread.Sleep(1000);
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE));
             } while (devicePaths.Count == 0);
-            Console.WriteLine("\n");
+            Console.WriteLine();
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
                 ProgramExit(-1);
             }
             devicePath = devicePaths[0];
-            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
             if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
             {
@@ -345,22 +344,21 @@ namespace wpi
             CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
-            Console.WriteLine("\nLook for a phone connected on a USB port");
-            Console.Write("and exposing \"Care Connectivity\" device interface.");
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface.");
             do
             {
                 Thread.Sleep(1000);
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE));
             } while (devicePaths.Count == 0);
-            Console.WriteLine("\n");
+            Console.WriteLine();
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
                 ProgramExit(-1);
             }
             devicePath = devicePaths[0];
-            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
             if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
             {
@@ -467,22 +465,21 @@ namespace wpi
             CareConnectivityDeviceInterface.WritePipe(RebootToFlashCommand, RebootToFlashCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
-            Console.WriteLine("Look for a phone connected on a USB port");
-            Console.Write("and exposing \"Care Connectivity\" device interface");
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface");
             do
             {
                 Thread.Sleep(1000);
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE));
             } while (devicePaths.Count == 0);
-            Console.WriteLine("\n");
+            Console.WriteLine();
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
                 ProgramExit(-1);
             }
             devicePath = devicePaths[0];
-            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
             if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
             {
@@ -598,21 +595,20 @@ namespace wpi
         repair_bricked_phone:
             Buffer = new byte[0x8000];
 
-            Console.WriteLine("Look for a phone connected on a USB port");
-            Console.Write("and exposing \"Lumia Emergency\" device interface");
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Lumia Emergency\" device interface");
             do
             {
                 Thread.Sleep(1000);
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE));
             } while (devicePaths.Count == 0);
-            Console.WriteLine("\n");
+            Console.WriteLine();
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
             }
             devicePath = devicePaths[0];
-            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
             if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == 0)
             {
                 // Vendor ID 0x05C6 : Qualcomm Inc.
@@ -637,15 +633,14 @@ namespace wpi
                 ProgramExit(-1);
             }
 
-
-            Console.WriteLine("Upload the emergency programmer...");
+            Console.WriteLine("\nUpload the emergency programmer...");
             if (!Qualcomm.SendToPhoneMemory(0x2A000000, programmer, (uint)programmer.Length, EmergencyDeviceInterface))
             {
                 Console.WriteLine("Failed to upload the programmer.");
                 ProgramExit(-1);
             }
 
-            Console.WriteLine("Start the emergency programmer...");
+            Console.WriteLine("\nStart the emergency programmer...");
             // Send Go command (0x05) to execute code at a given 32bits address
             byte[] goCommand = Qualcomm.encodeHDLC(new byte[] { 0x05, 0x2A, 0x00, 0x00, 0x00 }, 5); // command (1byte) + address (4 bytes)
             EmergencyDeviceInterface.WritePipe(goCommand, goCommand.Length);
@@ -658,21 +653,20 @@ namespace wpi
             }
             EmergencyDeviceInterface.Close(); // The successful loading of the programmer causes a disconnection of the phone
 
-            Console.WriteLine("\nLook for a phone connected on a USB port");
-            Console.Write("and exposing \"Lumia Emergency\" device interface");
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Lumia Emergency\" device interface");
             do
             {
                 Thread.Sleep(1000);
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE));
             } while (devicePaths.Count == 0);
-            Console.WriteLine("\n");
+            Console.WriteLine();
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
             }
             devicePath = devicePaths[0];
-            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
             if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == 0)
             {
                 // Vendor ID 0x05C6 : Qualcomm Inc.
@@ -825,21 +819,20 @@ namespace wpi
             Console.WriteLine("\nAfter reboot, the phone should be in \"flash\" mode \"in-progress\" : A big \"NOKIA\" in the top part of the screen on a dark red background.\n");
             // This is because we previously interrupt a flash session to brick the phone...
 
-            Console.WriteLine("Look for a phone connected on a USB port");
-            Console.Write("and exposing \"Care Connectivity\" device interface");
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface");
             do
             {
                 Thread.Sleep(1000);
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE));
             } while (devicePaths.Count == 0);
-            Console.WriteLine("\n");
+            Console.WriteLine();
             if (devicePaths.Count != 1)
             {
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
             }
             devicePath = devicePaths[0];
-            Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
             if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
             {
@@ -867,7 +860,7 @@ namespace wpi
             }
 
             // Flash dummy sector (only allowed when phone is authenticated)
-            Console.WriteLine("Flash an empty sector to exit the \"flash\" mode...");
+            Console.WriteLine("\nFlash an empty sector to exit the \"flash\" mode...");
             byte[] flashCommand = new byte[576]; // command header (64 bytes) + empty sector (512 bytes)
             // We use the normal command NOKF instead of the UFP extended command NOKXFS
             flashCommand[0] = 0x4E; // N
@@ -935,6 +928,19 @@ namespace wpi
             }
 
             return false; ;
+        }
+
+        public static void printUsage()
+        {
+            Console.WriteLine("Usage:");
+            Console.WriteLine("--mode=REPAIR");
+            Console.WriteLine("\t--ffu=<.ffu file>");
+            Console.WriteLine("\t--hex=<.hex programmer file>");
+            Console.WriteLine("--mode=UNLOCK");
+            Console.WriteLine("\t--ffu=<.ffu file>");
+            Console.WriteLine("\t--hex=<.hex programmer file>");
+            Console.WriteLine("\t--bin=<.bin engeeniring SBL3 file>");
+            Console.WriteLine("[--verbose]");
         }
     }
 }

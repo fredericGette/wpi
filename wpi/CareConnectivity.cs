@@ -46,7 +46,7 @@ namespace wpi
             Console.WriteLine("\tprotocol: {0}.{1}", values[6], values[7]);
             Console.WriteLine("\tversion: {0}.{1}", values[8], values[9]);
 
-            Console.WriteLine("Sub-blocks:");
+            if (Program.verbose) Console.WriteLine("Sub-blocks:");
             int subblockCount = values[10];
             int subblockOffset = 11;
             for (int i = 0; i < subblockCount; i++)
@@ -104,6 +104,7 @@ namespace wpi
 
                 int subblockID = values[subblockOffset];
                 int subblockLength = (values[subblockOffset + 1] << 8) + values[subblockOffset + 2];
+                if (Program.verbose) Console.WriteLine("\tID {0:X2}", subblockID);
                 subblockOffset += subblockLength + 3; // ID (1 byte) + Length (2 bytes)
             }
         }
@@ -246,7 +247,7 @@ namespace wpi
 
             // values[16] indicates the size of the response
             // It should be 4 in our case
-            uint flashStatus = (uint)(values[17] << 24) + (uint)(values[18] << 16) + (uint)(values[19] << 8) + (uint)(values[20]);
+            uint flashStatus = ((uint)values[17] << 24) + ((uint)values[18] << 16) + ((uint)values[19] << 8) + values[20];
 
             return flashStatus == 1;
         }

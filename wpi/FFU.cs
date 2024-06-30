@@ -37,22 +37,22 @@ namespace wpi
                 OpenFile();
 
                 // Read Security Header
-                uint SecurityHeaderSize = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
+                uint SecurityHeaderSize = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
                 byte[] signatureSecurityHeader = new byte[12];
                 FFUFile.Read(signatureSecurityHeader, 0, 12); // Must be "SignedImage "
-                ChunkSize = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
+                ChunkSize = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
                 ChunkSize = ChunkSize * 1024; // Convert from Kb to byte
-                uint hashAgloId = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
-                uint CatalogSize = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
-                uint HashTableSize = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
+                uint hashAgloId = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
+                uint CatalogSize = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
+                uint HashTableSize = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
                 SecurityHeaderLength = RoundUpToChunks(SecurityHeaderSize + CatalogSize + HashTableSize);
 
                 // Read Image Header
                 FFUFile.Seek(SecurityHeaderLength, SeekOrigin.Begin);
-                uint ImageHeaderSize = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
+                uint ImageHeaderSize = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
                 byte[] signatureImageHeader = new byte[12];
                 FFUFile.Read(signatureImageHeader, 0, 12); // Must be "ImageFlash  "
-                uint ManifestLength = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
+                uint ManifestLength = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
                 ImageHeaderLength = RoundUpToChunks(ImageHeaderSize + ManifestLength);
 
                 // Read Store Header
@@ -60,11 +60,11 @@ namespace wpi
                 byte[] bufferPlatformID = new byte[192];
                 FFUFile.Read(bufferPlatformID, 0, 192);
                 PlatformID = System.Text.Encoding.ASCII.GetString(bufferPlatformID).TrimEnd(new char[] { (char)0, ' ' });
-                uint dwBlockSizeInBytes = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
-                uint WriteDescriptorCount = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
-                uint WriteDescriptorLength = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
-                uint ValidateDescriptorCount = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
-                uint ValidateDescriptorLength = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
+                uint dwBlockSizeInBytes = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
+                uint WriteDescriptorCount = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
+                uint WriteDescriptorLength = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
+                uint ValidateDescriptorCount = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
+                uint ValidateDescriptorLength = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
                 StoreHeader = new byte[RoundUpToChunks(248 + WriteDescriptorLength + ValidateDescriptorLength)]; // 248 = size of the fields of the Store Header structure
                 FFUFile.Seek(SecurityHeaderLength + ImageHeaderLength, SeekOrigin.Begin);
                 FFUFile.Read(StoreHeader, 0, StoreHeader.Length);
@@ -79,13 +79,13 @@ namespace wpi
                 int FFUChunkIndex = 0;
                 for (uint i = 0; i < WriteDescriptorCount; i++)
                 {
-                    LocationCount = (uint)StoreHeader[WriteDescriptorEntryOffset] + (uint)(StoreHeader[WriteDescriptorEntryOffset+1] << 8) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 2] << 16) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 3] << 24);
-                    ChunkCount = (uint)StoreHeader[WriteDescriptorEntryOffset+4] + (uint)(StoreHeader[WriteDescriptorEntryOffset + 5] << 8) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 6] << 16) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 7] << 24);
+                    LocationCount = StoreHeader[WriteDescriptorEntryOffset] + ((uint)StoreHeader[WriteDescriptorEntryOffset+1] << 8) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 2] << 16) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 3] << 24);
+                    ChunkCount = StoreHeader[WriteDescriptorEntryOffset+4] + ((uint)StoreHeader[WriteDescriptorEntryOffset + 5] << 8) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 6] << 16) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 7] << 24);
 
                     for (uint j = 0; j < LocationCount; j++)
                     {
-                        DiskAccessMethod = (uint)StoreHeader[WriteDescriptorEntryOffset + 8 + 8*j] + (uint)(StoreHeader[WriteDescriptorEntryOffset + 9 + 8 * j] << 8) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 10 + 8 * j] << 16) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 11 + 8 * j] << 24);
-                        ChunkIndex = (uint)StoreHeader[WriteDescriptorEntryOffset + 12 + 8 * j] + (uint)(StoreHeader[WriteDescriptorEntryOffset + 13 + 8 * j] << 8) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 14 + 8 * j] << 16) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 15 + 8 * j] << 24);
+                        DiskAccessMethod = StoreHeader[WriteDescriptorEntryOffset + 8 + 8*j] + ((uint)StoreHeader[WriteDescriptorEntryOffset + 9 + 8 * j] << 8) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 10 + 8 * j] << 16) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 11 + 8 * j] << 24);
+                        ChunkIndex = StoreHeader[WriteDescriptorEntryOffset + 12 + 8 * j] + ((uint)StoreHeader[WriteDescriptorEntryOffset + 13 + 8 * j] << 8) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 14 + 8 * j] << 16) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 15 + 8 * j] << 24);
 
                         if (DiskAccessMethod == 0) // 0 = From begin, 2 = From end. We ignore chunks at end of disk. These contain secondairy GPT.
                         {
@@ -101,13 +101,13 @@ namespace wpi
                 FFUChunkIndex = 0;
                 for (int i = 0; i < WriteDescriptorCount; i++)
                 {
-                    LocationCount = (uint)StoreHeader[WriteDescriptorEntryOffset] + (uint)(StoreHeader[WriteDescriptorEntryOffset + 1] << 8) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 2] << 16) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 3] << 24);
-                    ChunkCount = (uint)StoreHeader[WriteDescriptorEntryOffset + 4] + (uint)(StoreHeader[WriteDescriptorEntryOffset + 5] << 8) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 6] << 16) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 7] << 24);
+                    LocationCount = StoreHeader[WriteDescriptorEntryOffset] + ((uint)StoreHeader[WriteDescriptorEntryOffset + 1] << 8) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 2] << 16) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 3] << 24);
+                    ChunkCount = StoreHeader[WriteDescriptorEntryOffset + 4] + ((uint)StoreHeader[WriteDescriptorEntryOffset + 5] << 8) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 6] << 16) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 7] << 24);
 
                     for (int j = 0; j < LocationCount; j++)
                     {
-                        DiskAccessMethod = (uint)StoreHeader[WriteDescriptorEntryOffset + 8 + 8 * j] + (uint)(StoreHeader[WriteDescriptorEntryOffset + 9 + 8 * j] << 8) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 10 + 8 * j] << 16) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 11 + 8 * j] << 24);
-                        ChunkIndex = (uint)StoreHeader[WriteDescriptorEntryOffset + 12 + 8 * j] + (uint)(StoreHeader[WriteDescriptorEntryOffset + 13 + 8 * j] << 8) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 14 + 8 * j] << 16) + (uint)(StoreHeader[WriteDescriptorEntryOffset + 15 + 8 * j] << 24);
+                        DiskAccessMethod = StoreHeader[WriteDescriptorEntryOffset + 8 + 8 * j] + ((uint)StoreHeader[WriteDescriptorEntryOffset + 9 + 8 * j] << 8) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 10 + 8 * j] << 16) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 11 + 8 * j] << 24);
+                        ChunkIndex = StoreHeader[WriteDescriptorEntryOffset + 12 + 8 * j] + ((uint)StoreHeader[WriteDescriptorEntryOffset + 13 + 8 * j] << 8) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 14 + 8 * j] << 16) + ((uint)StoreHeader[WriteDescriptorEntryOffset + 15 + 8 * j] << 24);
 
                         if (DiskAccessMethod == 0) // 0 = From begin, 2 = From end. We ignore chunks at end of disk. These contain secondairy GPT.
                         {
@@ -269,7 +269,7 @@ namespace wpi
             FileStream FFUFile = new FileStream(ffuPath, FileMode.Open, FileAccess.Read);
 
             // Read Security Header
-            uint securityHeaderSize = (uint)FFUFile.ReadByte() + (uint)(FFUFile.ReadByte() << 8) + (uint)(FFUFile.ReadByte() << 16) + (uint)(FFUFile.ReadByte() << 24);
+            uint securityHeaderSize = (uint)FFUFile.ReadByte() + ((uint)FFUFile.ReadByte() << 8) + ((uint)FFUFile.ReadByte() << 16) + ((uint)FFUFile.ReadByte() << 24);
             byte[] signature = new byte[12];
             FFUFile.Read(signature, 0, 12);
             if (!"SignedImage ".Equals(System.Text.Encoding.ASCII.GetString(signature)))

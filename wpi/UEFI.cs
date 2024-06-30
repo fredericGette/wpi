@@ -65,9 +65,9 @@ namespace wpi
             if (!VerifyVolumeChecksum(Binary, VolumeHeaderOffset))
                 throw new BadImageFormatException();
 
-            VolumeSize = (uint)(Binary[VolumeHeaderOffset + 35] << 24) + (uint)(Binary[VolumeHeaderOffset + 34] << 16) + (uint)(Binary[VolumeHeaderOffset + 33] << 8) + Binary[VolumeHeaderOffset + 32]; // TODO: This is actually a QWORD
+            VolumeSize = ((uint)Binary[VolumeHeaderOffset + 35] << 24) + ((uint)Binary[VolumeHeaderOffset + 34] << 16) + ((uint)Binary[VolumeHeaderOffset + 33] << 8) + Binary[VolumeHeaderOffset + 32]; // TODO: This is actually a QWORD
             VolumeHeaderSize = (ushort)((Binary[VolumeHeaderOffset + 49] << 8) + Binary[VolumeHeaderOffset + 48]); 
-            uint test = (uint)(Binary[VolumeHeaderOffset + 47] << 24) + (uint)(Binary[VolumeHeaderOffset + 46] << 16) + (uint)(Binary[VolumeHeaderOffset + 45] << 8) + Binary[VolumeHeaderOffset + 44];
+            uint test = ((uint)Binary[VolumeHeaderOffset + 47] << 24) + ((uint)Binary[VolumeHeaderOffset + 46] << 16) + ((uint)Binary[VolumeHeaderOffset + 45] << 8) + Binary[VolumeHeaderOffset + 44];
             PaddingByteValue = (test & 0x00000800) > 0 ? (byte)0xFF : (byte)0x00; // EFI_FVB_ERASE_POLARITY = 0x00000800
 
             // In the volume look for a file of type EFI_FV_FILETYPE_FIRMWARE_VOLUME_IMAGE (0x0B)
@@ -82,7 +82,7 @@ namespace wpi
                     throw new BadImageFormatException();
 
                 FileType = Binary[FileHeaderOffset + 18];
-                FileSize = (uint)(Binary[FileHeaderOffset + 22] << 16) + (uint)(Binary[FileHeaderOffset + 21] << 8) + Binary[FileHeaderOffset + 20];
+                FileSize = ((uint)Binary[FileHeaderOffset + 22] << 16) + ((uint)Binary[FileHeaderOffset + 21] << 8) + Binary[FileHeaderOffset + 20];
 
                 if (FileType == 0x0B) // EFI_FV_FILETYPE_FIRMWARE_VOLUME_IMAGE
                 {
@@ -114,7 +114,7 @@ namespace wpi
             do
             {
                 SectionType = Binary[SectionHeaderOffset + 3];
-                SectionSize = (uint)(Binary[SectionHeaderOffset + 2] << 16) + (uint)(Binary[SectionHeaderOffset + 1] << 8) + Binary[SectionHeaderOffset];
+                SectionSize = ((uint)Binary[SectionHeaderOffset + 2] << 16) + ((uint)Binary[SectionHeaderOffset + 1] << 8) + Binary[SectionHeaderOffset];
 
                 if (SectionType == 0x02) // EFI_SECTION_GUID_DEFINED
                 {
@@ -148,7 +148,7 @@ namespace wpi
             do
             {
                 SectionType = DecompressedImage[DecompressedVolumeSectionHeaderOffset + 3];
-                SectionSize = (uint)(DecompressedImage[DecompressedVolumeSectionHeaderOffset + 2] << 16) + (uint)(DecompressedImage[DecompressedVolumeSectionHeaderOffset + 1] << 8) + DecompressedImage[DecompressedVolumeSectionHeaderOffset];
+                SectionSize = ((uint)DecompressedImage[DecompressedVolumeSectionHeaderOffset + 2] << 16) + ((uint)DecompressedImage[DecompressedVolumeSectionHeaderOffset + 1] << 8) + DecompressedImage[DecompressedVolumeSectionHeaderOffset];
                 SectionHeaderSize = (ushort)((DecompressedImage[DecompressedVolumeSectionHeaderOffset + 21] << 8) + DecompressedImage[DecompressedVolumeSectionHeaderOffset + 20]);
 
                 if (SectionType == 0x17) // EFI_SECTION_FIRMWARE_VOLUME_IMAGE
@@ -177,8 +177,8 @@ namespace wpi
             if (!VerifyVolumeChecksum(DecompressedImage, DecompressedVolumeHeaderOffset))
                 throw new BadImageFormatException();
 
-            uint DecompressedVolumeSize = (uint)(DecompressedImage[DecompressedVolumeHeaderOffset + 35] << 24) + (uint)(DecompressedImage[DecompressedVolumeHeaderOffset + 34] << 16) + (uint)(DecompressedImage[DecompressedVolumeHeaderOffset + 33] << 8) + DecompressedImage[DecompressedVolumeHeaderOffset + 32]; // TODO: This is actually a QWORD
-            uint DecompressedVolumeHeaderSize = (uint)(DecompressedImage[DecompressedVolumeHeaderOffset + 49] << 8) + DecompressedImage[DecompressedVolumeHeaderOffset + 48];
+            uint DecompressedVolumeSize = ((uint)DecompressedImage[DecompressedVolumeHeaderOffset + 35] << 24) + ((uint)DecompressedImage[DecompressedVolumeHeaderOffset + 34] << 16) + ((uint)DecompressedImage[DecompressedVolumeHeaderOffset + 33] << 8) + DecompressedImage[DecompressedVolumeHeaderOffset + 32]; // TODO: This is actually a QWORD
+            uint DecompressedVolumeHeaderSize = ((uint)DecompressedImage[DecompressedVolumeHeaderOffset + 49] << 8) + DecompressedImage[DecompressedVolumeHeaderOffset + 48];
 
             // The files in this decompressed volume are the real EFI's.
             if (Program.verbose) Console.WriteLine("\nUEFI files:");
@@ -201,7 +201,7 @@ namespace wpi
                 if (!ContentFound)
                     break;
 
-                FileSize = (uint)(DecompressedImage[DecompressedFileHeaderOffset + 22] << 16) + (uint)(DecompressedImage[DecompressedFileHeaderOffset + 21] << 8) + DecompressedImage[DecompressedFileHeaderOffset + 20];
+                FileSize = ((uint)DecompressedImage[DecompressedFileHeaderOffset + 22] << 16) + ((uint)DecompressedImage[DecompressedFileHeaderOffset + 21] << 8) + DecompressedImage[DecompressedFileHeaderOffset + 20];
 
                 if ((DecompressedFileHeaderOffset + FileSize) >= (DecompressedVolumeHeaderOffset + DecompressedVolumeSize))
                     break;
@@ -222,7 +222,7 @@ namespace wpi
                 do
                 {
                     SectionType = DecompressedImage[DecompressedSectionHeaderOffset + 3];
-                    SectionSize = (uint)(DecompressedImage[DecompressedSectionHeaderOffset + 2] << 16) + (uint)(DecompressedImage[DecompressedSectionHeaderOffset + 1] << 8) + DecompressedImage[DecompressedSectionHeaderOffset];
+                    SectionSize = ((uint)DecompressedImage[DecompressedSectionHeaderOffset + 2] << 16) + ((uint)DecompressedImage[DecompressedSectionHeaderOffset + 1] << 8) + DecompressedImage[DecompressedSectionHeaderOffset];
 
                     // SectionTypes that are relevant here:
                     // 0x10 = PE File
@@ -269,7 +269,7 @@ namespace wpi
         {
             byte[] SecurityDxe = GetFile("SecurityDxe");
             // Clear EFI checksum
-            uint PEHeaderOffset = (uint)(SecurityDxe[63] << 24) + (uint)(SecurityDxe[62] << 16) + (uint)(SecurityDxe[61] << 8) + SecurityDxe[60];
+            uint PEHeaderOffset = ((uint)SecurityDxe[63] << 24) + ((uint)SecurityDxe[62] << 16) + ((uint)SecurityDxe[61] << 8) + SecurityDxe[60];
             SecurityDxe[PEHeaderOffset + 88] = 0x00;
             SecurityDxe[PEHeaderOffset + 89] = 0x00;
             SecurityDxe[PEHeaderOffset + 90] = 0x00;
@@ -310,7 +310,7 @@ namespace wpi
 
             byte[] SecurityServicesDxe = GetFile("SecurityServicesDxe");
             // Clear EFI checksum
-            PEHeaderOffset = (uint)(SecurityServicesDxe[63] << 24) + (uint)(SecurityServicesDxe[62] << 16) + (uint)(SecurityServicesDxe[61] << 8) + SecurityServicesDxe[60];
+            PEHeaderOffset = ((uint)SecurityServicesDxe[63] << 24) + ((uint)SecurityServicesDxe[62] << 16) + ((uint)SecurityServicesDxe[61] << 8) + SecurityServicesDxe[60];
             SecurityServicesDxe[PEHeaderOffset + 88] = 0x00;
             SecurityServicesDxe[PEHeaderOffset + 89] = 0x00;
             SecurityServicesDxe[PEHeaderOffset + 90] = 0x00;
@@ -367,6 +367,7 @@ namespace wpi
                     }
                 }
             }
+            Console.WriteLine();
             if (PatchOffset == -1)
                 throw new BadImageFormatException();
 
@@ -418,7 +419,7 @@ namespace wpi
             // Determine padding
             UInt32 OldSectionPadding = Align(0, CompressedSubImageSize, 4) - CompressedSubImageSize;
             UInt32 NewSectionPadding = Align(0, (UInt32)NewCompressedImage.Length, 4) - (UInt32)NewCompressedImage.Length;
-            UInt32 OldFileSize = (uint)(Binary[FileHeaderOffset + 22] << 16) + (uint)(Binary[FileHeaderOffset + 21] << 8) + Binary[FileHeaderOffset + 20];
+            UInt32 OldFileSize = ((uint)Binary[FileHeaderOffset + 22] << 16) + ((uint)Binary[FileHeaderOffset + 21] << 8) + Binary[FileHeaderOffset + 20];
 
             // Filesize includes fileheader. But it does not include the padding-bytes. Not even the padding bytes of the last section.
             UInt32 NewFileSize;
@@ -461,7 +462,7 @@ namespace wpi
             CompressedSubImageSize = (UInt32)NewCompressedImage.Length;
 
             // Fix section
-            uint sectionValue = CompressedSubImageSize + (uint)(Binary[SectionHeaderOffset + 21] << 8) + (uint)Binary[SectionHeaderOffset + 20];
+            uint sectionValue = CompressedSubImageSize + ((uint)Binary[SectionHeaderOffset + 21] << 8) + Binary[SectionHeaderOffset + 20];
             NewBinary[SectionHeaderOffset] = (byte)(sectionValue & 0xFF);
             NewBinary[SectionHeaderOffset + 1] = (byte)((sectionValue >> 8) & 0xFF);
             NewBinary[SectionHeaderOffset + 2] = (byte)((sectionValue >> 16) & 0xFF);
@@ -481,14 +482,14 @@ namespace wpi
 
         private bool VerifyVolumeChecksum(byte[] Image, UInt32 Offset)
         {
-            uint VolumeHeaderSize = (uint)(Image[Offset + 49] << 8) + Image[Offset + 48];
+            uint VolumeHeaderSize = ((uint)Image[Offset + 49] << 8) + Image[Offset + 48];
             byte[] Header = new byte[VolumeHeaderSize];
             System.Buffer.BlockCopy(Image, (int)Offset, Header, 0, (int)VolumeHeaderSize);
 
             Header[50] = 0x00; // Clear checksum
             Header[51] = 0x00;
 
-            uint CurrentChecksum = (uint)(Image[Offset + 51] << 8) + Image[Offset + 50];
+            uint CurrentChecksum = ((uint)Image[Offset + 51] << 8) + Image[Offset + 50];
             UInt16 NewChecksum = CalculateChecksum16(Header, 0, VolumeHeaderSize);
             return (CurrentChecksum == NewChecksum);
         }
@@ -518,7 +519,7 @@ namespace wpi
             // This function only checks fixed checksum-values 0x55 and 0xAA.
 
             UInt16 FileHeaderSize = 0x18;
-            UInt32 FileSize = (uint)(Image[Offset + 22] << 16) + (uint)(Image[Offset + 21] << 8) + Image[Offset + 20];
+            UInt32 FileSize = ((uint)Image[Offset + 22] << 16) + ((uint)Image[Offset + 21] << 8) + Image[Offset + 20];
 
             byte[] Header = new byte[FileHeaderSize - 1];
             System.Buffer.BlockCopy(Image, (int)Offset, Header, 0, FileHeaderSize - 1);
@@ -583,7 +584,7 @@ namespace wpi
             UInt32 OldSectionPadding = Align(0, OldBinarySize, 4) - OldBinarySize;
             UInt32 NewSectionPadding = Align(0, NewBinarySize, 4) - NewBinarySize;
 
-            UInt32 OldFileSize = (uint)(DecompressedImage[File.FileOffset + 22] << 16) + (uint)(DecompressedImage[File.FileOffset + 21] << 8) + DecompressedImage[File.FileOffset + 20];
+            UInt32 OldFileSize = ((uint)DecompressedImage[File.FileOffset + 22] << 16) + ((uint)DecompressedImage[File.FileOffset + 21] << 8) + DecompressedImage[File.FileOffset + 20];
             UInt32 NewFileSize = OldFileSize - OldBinarySize - OldSectionPadding + NewBinarySize + NewSectionPadding;
 
             UInt32 OldFilePadding = Align(0, OldFileSize, 8) - OldFileSize;
@@ -626,26 +627,26 @@ namespace wpi
                 Int32 NewOffset = (int)(NewFileSize + NewFilePadding) - (int)(OldFileSize - OldFilePadding);
 
                 // Fix section-size
-                uint sectionSize = (uint)(NewImage[File.SectionOffset + 2] << 16) + (uint)(NewImage[File.SectionOffset + 1] << 8) + (uint)NewImage[File.SectionOffset] + (uint)NewOffset;
+                uint sectionSize = ((uint)NewImage[File.SectionOffset + 2] << 16) + ((uint)NewImage[File.SectionOffset + 1] << 8) + NewImage[File.SectionOffset] + (uint)NewOffset;
                 NewImage[File.SectionOffset] = (byte)(sectionSize & 0xFF);
                 NewImage[File.SectionOffset + 1] = (byte)((sectionSize >> 8) & 0xFF);
                 NewImage[File.SectionOffset + 2] = (byte)((sectionSize >> 16) & 0xFF);
 
                 // Fix file-size
-                uint fileSize = (uint)(NewImage[File.FileOffset + 22] << 16) + (uint)(NewImage[File.FileOffset + 21] << 8) + (uint)NewImage[File.FileOffset + 20] + (uint)NewOffset;
+                uint fileSize = ((uint)NewImage[File.FileOffset + 22] << 16) + ((uint)NewImage[File.FileOffset + 21] << 8) + NewImage[File.FileOffset + 20] + (uint)NewOffset;
                 NewImage[File.FileOffset + 20] = (byte)(fileSize & 0xFF);
                 NewImage[File.FileOffset + 21] = (byte)((fileSize >> 8) & 0xFF);
                 NewImage[File.FileOffset + 22] = (byte)((fileSize >> 16) & 0xFF);
 
                 // Fix volume-size - TODO: This is actually a QWORD
-                uint volumeSize = (uint)(NewImage[DecompressedVolumeHeaderOffset + 35] << 24) + (uint)(NewImage[DecompressedVolumeHeaderOffset + 34] << 16) + (uint)(NewImage[DecompressedVolumeHeaderOffset + 33] << 8) + (uint)NewImage[DecompressedVolumeHeaderOffset + 32] + (uint)NewOffset;
+                uint volumeSize = ((uint)NewImage[DecompressedVolumeHeaderOffset + 35] << 24) + ((uint)NewImage[DecompressedVolumeHeaderOffset + 34] << 16) + ((uint)NewImage[DecompressedVolumeHeaderOffset + 33] << 8) + NewImage[DecompressedVolumeHeaderOffset + 32] + (uint)NewOffset;
                 NewImage[DecompressedVolumeHeaderOffset + 32] = (byte)(volumeSize & 0xFF);
                 NewImage[DecompressedVolumeHeaderOffset + 33] = (byte)((volumeSize >> 8) & 0xFF);
                 NewImage[DecompressedVolumeHeaderOffset + 34] = (byte)((volumeSize >> 16) & 0xFF);
                 NewImage[DecompressedVolumeHeaderOffset + 35] = (byte)((volumeSize >> 24) & 0xFF);
 
                 // Fix section-size
-                sectionSize = (uint)(NewImage[DecompressedVolumeHeaderOffset + 2] << 16) + (uint)(NewImage[DecompressedVolumeHeaderOffset + 1] << 8) + (uint)NewImage[DecompressedVolumeHeaderOffset] + (uint)NewOffset;
+                sectionSize = ((uint)NewImage[DecompressedVolumeHeaderOffset + 2] << 16) + ((uint)NewImage[DecompressedVolumeHeaderOffset + 1] << 8) + NewImage[DecompressedVolumeHeaderOffset] + (uint)NewOffset;
                 NewImage[DecompressedVolumeHeaderOffset] = (byte)(sectionSize & 0xFF);
                 NewImage[DecompressedVolumeHeaderOffset + 1] = (byte)((sectionSize >> 8) & 0xFF);
                 NewImage[DecompressedVolumeHeaderOffset + 2] = (byte)((sectionSize >> 16) & 0xFF);
@@ -680,7 +681,7 @@ namespace wpi
         private void CalculateFileChecksum(byte[] Image, UInt32 Offset)
         {
             UInt16 FileHeaderSize = 24;
-            UInt32 FileSize = (uint)(Image[Offset + 22] << 16) + (uint)(Image[Offset + 21] << 8) + (uint)Image[Offset + 20];
+            UInt32 FileSize = ((uint)Image[Offset + 22] << 16) + ((uint)Image[Offset + 21] << 8) + Image[Offset + 20];
 
             Image[Offset + 16] = 0x00; // Clear checksum
             Image[Offset + 17] = 0x00;

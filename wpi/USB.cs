@@ -236,14 +236,7 @@ namespace wpi
             if (!success)
                 throw new System.Exception("Failed to read pipe on WinUSB device.");
 
-            if (Program.verbose)
-            {
-                printRawConsole(buffer, (int)bytesRead, false);
-            }
-            else
-            {
-                Console.Write(".");
-            }
+            if (Program.verbose) printRawConsole(buffer, (int)bytesRead, false);
         }
 
         public void WritePipe(byte[] buffer, int length)
@@ -251,14 +244,7 @@ namespace wpi
             uint bytesWritten;
             bool success;
 
-            if (Program.verbose)
-            {
-                printRawConsole(buffer, length, true);
-            }
-            else
-            {
-                Console.Write(".");
-            }
+            if (Program.verbose) printRawConsole(buffer, length, true);
 
             unsafe
             {

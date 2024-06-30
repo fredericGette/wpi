@@ -85,16 +85,16 @@ namespace wpi
 
 
             uint HeaderOffset = Offset + 20; // total size of "Long Header"
-            uint ImageOffset = values[HeaderOffset] + (uint)(values[HeaderOffset + 1] << 8) + (uint)(values[HeaderOffset + 2] << 16) + (uint)(values[HeaderOffset + 2] << 24);
+            uint ImageOffset = values[HeaderOffset] + ((uint)values[HeaderOffset + 1] << 8) + ((uint)values[HeaderOffset + 2] << 16) + ((uint)values[HeaderOffset + 2] << 24);
             Console.WriteLine("Image offset = 0x{0:X8} ", ImageOffset);
 
-            uint ImageAddress = values[HeaderOffset + 4] + (uint)(values[HeaderOffset + 5] << 8) + (uint)(values[HeaderOffset + 6] << 16) + (uint)(values[HeaderOffset + 7] << 24);
+            uint ImageAddress = values[HeaderOffset + 4] + ((uint)values[HeaderOffset + 5] << 8) + ((uint)values[HeaderOffset + 6] << 16) + ((uint)values[HeaderOffset + 7] << 24);
             Console.WriteLine("Image address = 0x{0:X8} ", ImageAddress);
             // To disassemble the binary, use the ImageAddress-ImageOffset to rebase the code
             // then ImageAddress is the entry point.
 
-            uint CertificatesAddress = values[HeaderOffset + 24] + (uint)(values[HeaderOffset + 25] << 8) + (uint)(values[HeaderOffset + 26] << 16) + (uint)(values[HeaderOffset + 27] << 24);
-            uint CertificatesSize = values[HeaderOffset + 28] + (uint)(values[HeaderOffset + 29] << 8) + (uint)(values[HeaderOffset + 30] << 16) + (uint)(values[HeaderOffset + 31] << 24);
+            uint CertificatesAddress = values[HeaderOffset + 24] + ((uint)values[HeaderOffset + 25] << 8) + ((uint)values[HeaderOffset + 26] << 16) + ((uint)values[HeaderOffset + 27] << 24);
+            uint CertificatesSize = values[HeaderOffset + 28] + ((uint)values[HeaderOffset + 29] << 8) + ((uint)values[HeaderOffset + 30] << 16) + ((uint)values[HeaderOffset + 31] << 24);
             uint CertificatesOffset = CertificatesAddress - ImageAddress + ImageOffset;
 
             uint CurrentCertificateOffset = CertificatesOffset;
@@ -104,7 +104,7 @@ namespace wpi
             {
                 if ((values[CurrentCertificateOffset] == 0x30) && (values[CurrentCertificateOffset + 1] == 0x82))
                 {
-                    CertificateSize = (uint)(values[CurrentCertificateOffset + 2] << 8) + values[CurrentCertificateOffset + 3] + 4; // Big endian!
+                    CertificateSize = ((uint)values[CurrentCertificateOffset + 2] << 8) + values[CurrentCertificateOffset + 3] + 4; // Big endian!
 
                     if ((CurrentCertificateOffset + CertificateSize) == (CertificatesOffset + CertificatesSize))
                     {
@@ -161,9 +161,10 @@ namespace wpi
                     break;
                 }
             }
+            Console.WriteLine();
             if (patternPosition == -1)
             {
-                Console.WriteLine("\nUnable to find the pattern of the PartitionLoaderTable in the SBL1 partition of the FFU file.");
+                Console.WriteLine("Unable to find the pattern of the PartitionLoaderTable in the SBL1 partition of the FFU file.");
                 return null;
             }
             uint PartitionLoaderTableOffset = (uint)patternPosition;
@@ -184,13 +185,13 @@ namespace wpi
                 Console.WriteLine("Unable to find the pattern of the SharedMemoryAddress in the SBL1 partition of the FFU file.");
                 return null;
             }
-            uint SharedMemoryAddress = sbl1[patternPosition + 12] + (uint)(sbl1[patternPosition + 13] << 8) + (uint)(sbl1[patternPosition + 14] << 16) + (uint)(sbl1[patternPosition + 15] << 24);
+            uint SharedMemoryAddress = sbl1[patternPosition + 12] + ((uint)sbl1[patternPosition + 13] << 8) + ((uint)sbl1[patternPosition + 14] << 16) + ((uint)sbl1[patternPosition + 15] << 24);
             uint GlobalIsSecurityEnabledAddress = SharedMemoryAddress + 40;
 
             // Compute the ImageOffset and the ImageAddress of SBL1
             uint HeaderOffset = 0x2800 + 20; // SBL1 offset + total size of "Long Header"
-            uint ImageOffset = sbl1[HeaderOffset] + (uint)(sbl1[HeaderOffset + 1] << 8) + (uint)(sbl1[HeaderOffset + 2] << 16) + (uint)(sbl1[HeaderOffset + 2] << 24);
-            uint ImageAddress = sbl1[HeaderOffset + 4] + (uint)(sbl1[HeaderOffset + 5] << 8) + (uint)(sbl1[HeaderOffset + 6] << 16) + (uint)(sbl1[HeaderOffset + 7] << 24);
+            uint ImageOffset = sbl1[HeaderOffset] + ((uint)sbl1[HeaderOffset + 1] << 8) + ((uint)sbl1[HeaderOffset + 2] << 16) + ((uint)sbl1[HeaderOffset + 2] << 24);
+            uint ImageAddress = sbl1[HeaderOffset + 4] + ((uint)sbl1[HeaderOffset + 5] << 8) + ((uint)sbl1[HeaderOffset + 6] << 16) + ((uint)sbl1[HeaderOffset + 7] << 24);
 
             // Find the position of the ReturnAddress inside SBL1
             patternToFind = new byte[] { 0xA0, 0xE1, 0x1C, 0xD0, 0x8D, 0xE2, 0xF0, 0x4F, 0xBD, 0xE8, 0x1E, 0xFF, 0x2F, 0xE1 };
@@ -298,7 +299,7 @@ namespace wpi
             }
 
             // Read the length of the SBL3 image stored in the header
-            uint Length = rawSbl3[patternPosition + 16] + (uint)(rawSbl3[patternPosition + 17] << 8) + (uint)(rawSbl3[patternPosition + 18] << 16) + (uint)(rawSbl3[patternPosition + 19] << 24);
+            uint Length = rawSbl3[patternPosition + 16] + ((uint)rawSbl3[patternPosition + 17] << 8) + ((uint)rawSbl3[patternPosition + 18] << 16) + ((uint)rawSbl3[patternPosition + 19] << 24);
             // Add the length of the header
             Length += 40;
 
@@ -458,16 +459,18 @@ namespace wpi
             long Remaining = Length;
             UInt32 CurrentLength;
             UInt32 CurrentOffset = 0;
-            byte[] Buffer = new byte[0x107]; // Command (1byte) + Address (4bytes) + Length (2bytes) + Data (100bytes)
+            byte[] Buffer = new byte[263]; // Command (1byte) + Address (4bytes) + Length (2bytes) + Data (256bytes)
             UInt32 CurrentAddress = Address;
             byte[] CurrentBytes;
 
+            int progress = 0;
             while (Remaining > 0)
             {
+                if (!Program.verbose && progress++ % 10 == 0) Console.Write("."); // Progress bar
 
-                if (Remaining >= 0x100)
+                if (Remaining >= 256)
                 {
-                    CurrentLength = 0x100;
+                    CurrentLength = 256;
                     CurrentBytes = Buffer;
                 }
                 else
@@ -500,6 +503,7 @@ namespace wpi
                 CurrentOffset += CurrentLength;
                 Remaining -= CurrentLength;
             }
+            Console.WriteLine();
 
             return true;
         }
@@ -509,22 +513,25 @@ namespace wpi
             long RemainingBytes = LengthInBytes;
             UInt32 CurrentLength;
             UInt32 CurrentOffset = 0;
-            byte[] Buffer = new byte[0x405]; // command (1byte) + start position (4bytes) + Data (400bytes)
+            byte[] Buffer = new byte[1029]; // command (1byte) + start position (4bytes) + Data (1024bytes)
             byte[] FinalCommand;
             Buffer[0] = 0x07; // Ehost STREAM_WRITE_REQ
             UInt32 CurrentPosition = StartInBytes; // Position in the eMMC storage
 
+            int progress = 0;
             while (RemainingBytes > 0)
             {
+                if (!Program.verbose && progress++ % 10 == 0) Console.Write("."); // Progress bar
+
                 System.Buffer.BlockCopy(BitConverter.GetBytes(CurrentPosition), 0, Buffer, 1, 4); // Start position is in bytes and in Little Endian (on Samsung phones the start position is in Sectors!!)
 
-                if (RemainingBytes >= 0x400)
-                    CurrentLength = 0x400;
+                if (RemainingBytes >= 1024)
+                    CurrentLength = 1024;
                 else
                     CurrentLength = (UInt32)RemainingBytes;
                 System.Buffer.BlockCopy(Data, (int)CurrentOffset, Buffer, 5, (int)CurrentLength);
 
-                if (CurrentLength < 0x400)
+                if (CurrentLength < 1024)
                 {
                     FinalCommand = new byte[CurrentLength + 5];
                     System.Buffer.BlockCopy(Buffer, 0, FinalCommand, 0, (int)CurrentLength + 5);
@@ -556,6 +563,7 @@ namespace wpi
                 CurrentOffset += CurrentLength;
                 RemainingBytes -= CurrentLength;
             }
+            Console.WriteLine();
 
             return true;
         }
