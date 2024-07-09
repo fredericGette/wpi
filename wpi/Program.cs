@@ -12,9 +12,11 @@ namespace wpi
         private static string GUID_APOLLO_DEVICE_INTERFACE = "{7EAFF726-34CC-4204-B09D-F95471B873CF}";
         private static string GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE = "{0FD3B15C-D457-45D8-A779-C2B2C9F9D0FD}";
         private static string GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE = "{71DE994D-8B7C-43DB-A27E-2AE7CD579A0C}";
+        private static string GUID_MASS_STORAGE_DEVICE_INTERFACE = "{53F56307-B6BF-11D0-94F2-00A0C91EFB8B}";
         private static string VID_PID_NOKIA_LUMIA_NORMAL_MODE = "VID_0421&PID_0661";
         private static string VID_PID_NOKIA_LUMIA_UEFI_MODE = "VID_0421&PID_066E";
         private static string VID_PID_NOKIA_LUMIA_EMERGENCY_MODE = "VID_05C6&PID_9008";
+        private static string PATH_QUALCOMM_MASS_STORAGE = "disk&ven_qualcomm&prod_mmc_storage";
 
         public static bool verbose = false;
 
@@ -30,32 +32,39 @@ namespace wpi
             string mode = getStringParameter("mode", args); // REPAIR = partially repair phone in EDL mode. After repair the phone should be able to boot in "flash" mode. And you can use WPInternals to flash a ffu file.
             verbose = getBoolParameter("verbose", args);  // optional.
 
-            if (!"REPAIR".Equals(mode) && !"UNLOCK".Equals(mode))
+            if (!"REPAIR".Equals(mode) && !"UNLOCK".Equals(mode) && !"ROOT".Equals(mode))
             {
-                Console.WriteLine("Unkown \"mode={0}\". Only UNLOCK and REPAIR are available.", mode);
+                Console.WriteLine("Unkown \"mode={0}\". Only UNLOCK, REPAIR and ROOT are available.", mode);
                 printUsage();
                 ProgramExit(-1);
             }
 
-            if (ffuPath == null || !File.Exists(ffuPath))
+            if (("UNLOCK".Equals(mode) || "REPAIR".Equals(mode)) && (ffuPath == null || !File.Exists(ffuPath)))
             {
                 Console.WriteLine("FFU file not found.");
                 printUsage();
                 ProgramExit(-1);
             }
 
-            if (!"REPAIR".Equals(mode) && (engeeniringSBL3Path == null || !File.Exists(engeeniringSBL3Path)))
+            if ("UNLOCK".Equals(mode) && (engeeniringSBL3Path == null || !File.Exists(engeeniringSBL3Path)))
             {
                 Console.WriteLine("Raw image of an engeeniring SBL3 no found.");
                 printUsage();
                 ProgramExit(-1);
             }
 
-            if (programmerPath == null || !File.Exists(programmerPath))
+            if (("UNLOCK".Equals(mode) || "REPAIR".Equals(mode)) && (programmerPath == null || !File.Exists(programmerPath)))
             {
                 Console.WriteLine("Emergency programmer no found.");
                 printUsage();
                 ProgramExit(-1);
+            }
+
+            uint bytesRead;
+            byte[] Buffer;
+            if ("ROOT".Equals(mode))
+            {
+                goto root_phone;
             }
 
             // Check the validity of the FFU file
@@ -237,7 +246,7 @@ namespace wpi
             string devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_NORMAL_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_NORMAL_MODE, StringComparison.OrdinalIgnoreCase) == -1)
             {
                 // Vendor ID 0x0421 : Nokia Corporation
                 // Product ID 0x0661 : Lumia 520 / 620 / 820 / 920 Normal mode
@@ -258,8 +267,7 @@ namespace wpi
             byte[] OutBuffer = System.Text.Encoding.ASCII.GetBytes(Request);
             ApolloDeviceInterface.WritePipe(OutBuffer, OutBuffer.Length);
 
-            uint bytesRead;
-            byte[] Buffer = new byte[0x8000]; // Must be large enough to contain the GPT (see later)
+            Buffer = new byte[0x8000]; // Must be large enough to contain the GPT (see later)
             ApolloDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             ApolloDeviceInterface.Close();
 
@@ -296,7 +304,7 @@ namespace wpi
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == -1)
             {
                 // Vendor ID 0x0421 : Nokia Corporation
                 // Product ID 0x066E : UEFI mode (including flash and bootloader mode)
@@ -306,7 +314,9 @@ namespace wpi
             // Open the interface
             USB CareConnectivityDeviceInterface = new USB(devicePath);
 
-            Console.WriteLine("\nRead Flash application version (require 1.28 <= version < 2.0)...");
+            Console.WriteLine("\nRead Flash application version...");
+            Console.WriteLine("Unlock of the bootloader requires 1.28 <= version < 2.0");
+            Console.WriteLine("Root of the MainOS requires protocol < 2.0");
             byte[] ReadVersionCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x56 }; // NOKV = Info Query
             CareConnectivityDeviceInterface.WritePipe(ReadVersionCommand, ReadVersionCommand.Length);
             CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
@@ -376,7 +386,7 @@ namespace wpi
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == -1)
             {
                 // Vendor ID 0x0421 : Nokia Corporation
                 // Product ID 0x066E : UEFI mode (including flash and bootloader mode)
@@ -497,7 +507,7 @@ namespace wpi
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == -1)
             {
                 // Vendor ID 0x0421 : Nokia Corporation
                 // Product ID 0x066E : UEFI mode (including flash and bootloader mode)
@@ -625,7 +635,7 @@ namespace wpi
             }
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == -1)
             {
                 // Vendor ID 0x05C6 : Qualcomm Inc.
                 // Product ID 0x066E : Qualcomm Download
@@ -683,7 +693,7 @@ namespace wpi
             }
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == -1)
             {
                 // Vendor ID 0x05C6 : Qualcomm Inc.
                 // Product ID 0x066E : Qualcomm Download
@@ -850,7 +860,7 @@ namespace wpi
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == 0)
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == -1)
             {
                 // Vendor ID 0x0421 : Nokia Corporation
                 // Product ID 0x066E : UEFI mode (including flash and bootloader mode)
@@ -904,6 +914,124 @@ namespace wpi
             RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR
             CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Switch to "mass storage" mode to patch the MainOS and EFIESP partitions
+            ////////////////////////////////////////////////////////////////////////////
+
+            root_phone:
+
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Apollo\" device interface ( = \"normal\" mode )");
+            do
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_APOLLO_DEVICE_INTERFACE));
+            } while (devicePaths.Count == 0);
+            Console.WriteLine();
+            if (devicePaths.Count != 1)
+            {
+                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
+                ProgramExit(-1);
+            }
+            devicePath = devicePaths[0];
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
+
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_NORMAL_MODE, StringComparison.OrdinalIgnoreCase) == -1)
+            {
+                // Vendor ID 0x0421 : Nokia Corporation
+                // Product ID 0x0661 : Lumia 520 / 620 / 820 / 920 Normal mode
+                Console.WriteLine("Incorrect VID (expecting 0x0421) and/or incorrect PID (expecting 0x0661.)");
+                ProgramExit(-1);
+            }
+
+            Console.WriteLine("\nSwitch to \"flash\" mode...");
+            // Open the interface
+            ApolloDeviceInterface = new USB(devicePath);
+
+            // Send command to reboot in flash mode
+            Request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"SetDeviceMode\",\"params\":{\"DeviceMode\":\"Flash\",\"ResetMethod\":\"HwReset\",\"MessageVersion\":0}}";
+            OutBuffer = System.Text.Encoding.ASCII.GetBytes(Request);
+            ApolloDeviceInterface.WritePipe(OutBuffer, OutBuffer.Length);
+            Buffer = new byte[64]; // Should be enough to read the reboot response
+            ApolloDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+            ApolloDeviceInterface.Close();
+
+            Console.WriteLine("\nWait 15s until the phone reboots in \"flash\" mode...");
+            Console.WriteLine("Notes: In \"flash\" mode, the phone displays a big \"NOKIA\" in the top part of the screen.");
+            for (int i = 0; i < 15; i++)
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+            }
+
+            // Look for a phone connected on a USB port and exposing interface
+            // - known as "Care Connectivity" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
+            // - known as "Old Combi" interface in WPInternals
+            // This interface allows flash commands starting with the signature "NOK" (to reboot the phone for example).
+            // Notes: 
+            // this interface is also exposed when the phone is in "normal" mode.
+            // But in "normal" mode the PID of the device is 0x0661
+            // Whereas in "flash" or "bootloader" mode the PID of the device is 0x066E
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface.");
+            do
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE));
+            } while (devicePaths.Count == 0);
+            Console.WriteLine();
+            if (devicePaths.Count != 1)
+            {
+                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
+                ProgramExit(-1);
+            }
+            devicePath = devicePaths[0];
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
+
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == -1)
+            {
+                // Vendor ID 0x0421 : Nokia Corporation
+                // Product ID 0x066E : UEFI mode (including flash and bootloader mode)
+                Console.WriteLine("Incorrect VID (expecting 0x0421) and/or incorrect PID (expecting 0x066E)");
+                ProgramExit(-1);
+            }
+            // Open the interface
+            CareConnectivityDeviceInterface = new USB(devicePath);
+
+            Console.WriteLine("\nSwitch to \"mass storage\" mode...");
+            byte[] MassStorageCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x4D }; // NOKM = Mass Storage
+            CareConnectivityDeviceInterface.WritePipe(MassStorageCommand, MassStorageCommand.Length);
+            // The phone immediatly switches to "mass storage" and doesn't send a response.
+
+            Console.Write("\nLook for a phone connected on a USB port and exposing \"Mass Storage\" device interface.");
+            devicePath = null;
+            for (int i=0; i<15; i++) // Wait 15s max
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_MASS_STORAGE_DEVICE_INTERFACE));
+                if (devicePaths.Count > 0)
+                {
+                    for (int j=0; j< devicePaths.Count; j++)
+                    {
+                        if (devicePaths[j].IndexOf(PATH_QUALCOMM_MASS_STORAGE, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            devicePath = devicePaths[j];
+                            goto mass_storage_found;
+                        }
+                    }
+                }
+            }
+            Console.WriteLine();
+            if (devicePath == null)
+            {
+                Console.WriteLine("Unable to find a phone exposing a \"Mass Storage\" device interface.");
+                ProgramExit(-1);
+            }
+            mass_storage_found:
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
             ProgramExit(0);
         }

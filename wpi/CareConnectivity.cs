@@ -227,7 +227,7 @@ namespace wpi
             }
 
             byte[] gptBinary = new byte[33 * 512]; // We keep only 33 sectors for the GPT: the first sector is the MBR.
-            System.Buffer.BlockCopy(values, 6 + 2 + 512 , gptBinary, 0, gptBinary.Length); // we skip header (6 bytes) + error code (2 bytes) + the first sector which is the MBR (512 bytes)
+            System.Buffer.BlockCopy(values, 6 + 2 + 512, gptBinary, 0, gptBinary.Length); // we skip header (6 bytes) + error code (2 bytes) + the first sector which is the MBR (512 bytes)
 
             return new GPT(gptBinary, gptBinary.Length);
         }
@@ -252,8 +252,8 @@ namespace wpi
             // It should be 32 in our case
             byte[] rkh = values.Skip(17).Take(values[16]).ToArray();
 
-            Console.Write("Phone Root Hash Key ({0} bits): ", rkh.Length*8);
-            for (int i=0; i<rkh.Length; i++)
+            Console.Write("Phone Root Hash Key ({0} bits): ", rkh.Length * 8);
+            for (int i = 0; i < rkh.Length; i++)
             {
                 Console.Write("{0:X2}", rkh[i]);
             }
