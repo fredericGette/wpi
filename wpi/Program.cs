@@ -3,7 +3,11 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Linq;
 using System.IO;
+using System.IO.Ports;
 using System.Text.RegularExpressions;
+using System.Diagnostics;
+using System.Management;
+using System.Security.Cryptography;
 
 namespace wpi
 {
@@ -13,9 +17,11 @@ namespace wpi
         private static string GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE = "{0FD3B15C-D457-45D8-A779-C2B2C9F9D0FD}";
         private static string GUID_LUMIA_EMERGENCY_DEVICE_INTERFACE = "{71DE994D-8B7C-43DB-A27E-2AE7CD579A0C}";
         private static string GUID_MASS_STORAGE_DEVICE_INTERFACE = "{53F56307-B6BF-11D0-94F2-00A0C91EFB8B}";
+        private static string GUID_COM_PORT_DEVICE_INTERFACE = "{86E0D1E0-8089-11D0-9CE4-08003E301F73}";
         private static string VID_PID_NOKIA_LUMIA_NORMAL_MODE = "VID_0421&PID_0661";
         private static string VID_PID_NOKIA_LUMIA_UEFI_MODE = "VID_0421&PID_066E";
-        private static string VID_PID_NOKIA_LUMIA_EMERGENCY_MODE = "VID_05C6&PID_9008";
+        private static string VID_PID_QUALCOMM_EMERGENCY_MODE = "VID_05C6&PID_9008";
+        private static string VID_PID_QUALCOMM_DIAGNOSTIC = "VID_05C6&PID_9006";
         private static string PATH_QUALCOMM_MASS_STORAGE = "disk&ven_qualcomm&prod_mmc_storage";
 
         public static bool verbose = false;
@@ -271,14 +277,6 @@ namespace wpi
             ApolloDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             ApolloDeviceInterface.Close();
 
-            Console.WriteLine("\nWait 15s until the phone reboots in \"flash\" mode...");
-            Console.WriteLine("Notes: In \"flash\" mode, the phone displays a big \"NOKIA\" in the top part of the screen.");
-            for (int i=0; i<15; i++)
-            {
-                Thread.Sleep(1000);
-                Console.Write(".");
-            }            
-
             Buffer = new byte[0x8000]; // Must be large enough, because later it will contain the GPT of the phone.
             // Look for a phone connected on a USB port and exposing interface
             // - known as "Care Connectivity" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
@@ -289,28 +287,33 @@ namespace wpi
             // But in "normal" mode the PID of the device is 0x0661
             // Whereas in "flash" or "bootloader" mode the PID of the device is 0x066E
             Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface.");
-            do
+            for (int i = 0; i < 30; i++) // Wait 30s max
             {
                 Thread.Sleep(1000);
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE));
-            } while (devicePaths.Count == 0);
+                if (devicePaths.Count > 0)
+                {
+                    for (int j = 0; j < devicePaths.Count; j++)
+                    {
+                        if (devicePaths[j].IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            devicePath = devicePaths[j];
+                            goto flash_found1;
+                        }
+                    }
+                }
+            } while (devicePaths.Count == 0) ;
+          flash_found1:
             Console.WriteLine();
-            if (devicePaths.Count != 1)
+            if (devicePath == null)
             {
-                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
+                Console.WriteLine("Unable to find a phone exposing a \"Care Connectivity\" device interface.");
                 ProgramExit(-1);
             }
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == -1)
-            {
-                // Vendor ID 0x0421 : Nokia Corporation
-                // Product ID 0x066E : UEFI mode (including flash and bootloader mode)
-                Console.WriteLine("Incorrect VID (expecting 0x0421) and/or incorrect PID (expecting 0x066E)");
-                ProgramExit(-1);
-            }
             // Open the interface
             USB CareConnectivityDeviceInterface = new USB(devicePath);
 
@@ -635,7 +638,7 @@ namespace wpi
             }
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == -1)
+            if (devicePath.IndexOf(VID_PID_QUALCOMM_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == -1)
             {
                 // Vendor ID 0x05C6 : Qualcomm Inc.
                 // Product ID 0x066E : Qualcomm Download
@@ -693,10 +696,10 @@ namespace wpi
             }
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == -1)
+            if (devicePath.IndexOf(VID_PID_QUALCOMM_EMERGENCY_MODE, StringComparison.OrdinalIgnoreCase) == -1)
             {
                 // Vendor ID 0x05C6 : Qualcomm Inc.
-                // Product ID 0x066E : Qualcomm Download
+                // Product ID 0x9008 : Qualcomm Download
                 Console.WriteLine("Incorrect VID (expecting 0x05C6) and/or incorrect PID (expecting 0x9008)");
                 ProgramExit(-1);
             }
@@ -958,14 +961,6 @@ namespace wpi
             ApolloDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             ApolloDeviceInterface.Close();
 
-            Console.WriteLine("\nWait 15s until the phone reboots in \"flash\" mode...");
-            Console.WriteLine("Notes: In \"flash\" mode, the phone displays a big \"NOKIA\" in the top part of the screen.");
-            for (int i = 0; i < 15; i++)
-            {
-                Thread.Sleep(1000);
-                Console.Write(".");
-            }
-
             // Look for a phone connected on a USB port and exposing interface
             // - known as "Care Connectivity" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
             // - known as "Old Combi" interface in WPInternals
@@ -975,28 +970,33 @@ namespace wpi
             // But in "normal" mode the PID of the device is 0x0661
             // Whereas in "flash" or "bootloader" mode the PID of the device is 0x066E
             Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface.");
-            do
+            for (int i = 0; i < 30; i++) // Wait 30s max
             {
                 Thread.Sleep(1000);
                 Console.Write(".");
                 devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE));
+                if (devicePaths.Count > 0)
+                {
+                    for (int j = 0; j < devicePaths.Count; j++)
+                    {
+                        if (devicePaths[j].IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            devicePath = devicePaths[j];
+                            goto flash_found2;
+                        }
+                    }
+                }
             } while (devicePaths.Count == 0);
+        flash_found2:
             Console.WriteLine();
-            if (devicePaths.Count != 1)
+            if (devicePath == null)
             {
-                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
+                Console.WriteLine("Unable to find a phone exposing a \"Care Connectivity\" device interface.");
                 ProgramExit(-1);
             }
             devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) == -1)
-            {
-                // Vendor ID 0x0421 : Nokia Corporation
-                // Product ID 0x066E : UEFI mode (including flash and bootloader mode)
-                Console.WriteLine("Incorrect VID (expecting 0x0421) and/or incorrect PID (expecting 0x066E)");
-                ProgramExit(-1);
-            }
             // Open the interface
             CareConnectivityDeviceInterface = new USB(devicePath);
 
@@ -1024,21 +1024,154 @@ namespace wpi
                     }
                 }
             }
+        mass_storage_found:
             Console.WriteLine();
             if (devicePath == null)
             {
                 Console.WriteLine("Unable to find a phone exposing a \"Mass Storage\" device interface.");
                 ProgramExit(-1);
             }
-            mass_storage_found:
-            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
+            if (verbose) Console.WriteLine("\nPath of the device found:\n{0}", devicePath);
+
+            // Find the "drive letter" of the mass storage
+            string Drive = null;
+            ManagementObjectCollection coll = new ManagementObjectSearcher("select * from Win32_LogicalDisk").Get();
+            foreach (ManagementObject logical in coll)
+            {
+                string Label = "";
+                foreach (ManagementObject partition in logical.GetRelated("Win32_DiskPartition"))
+                {
+                    foreach (ManagementObject drive in partition.GetRelated("Win32_DiskDrive"))
+                    {
+                        if (drive["PNPDeviceID"].ToString().IndexOf("VEN_QUALCOMM&PROD_MMC_STORAGE") >= 0)
+                        {
+                            Label = (logical["VolumeName"] == null ? "" : logical["VolumeName"].ToString());
+                            if (string.Compare(Label, "MainOS", true) == 0) // Always prefer the MainOS drive-mapping
+                            {
+                                Drive = logical["Name"].ToString();
+                            }
+                            goto drive_found;
+                        }
+                    }
+                }
+            }
+        drive_found:
+            if (Drive == null)
+            {
+                Console.WriteLine("Unable to find the drive letter of the mass storage.");
+                ProgramExit(-1);
+            }
+            if (verbose) Console.WriteLine("\nDriver letter of the mass storage: {0}", Drive);
+
+            // Patch the Extensible Firmware Interface System Partition (EFIESP)
+            string EFIESPPath = Drive + @"\EFIESP\";
+
+            // Patch file bootarm.efi
+            FileStream stream = File.OpenRead(EFIESPPath + @"efi\boot\bootarm.efi");
+
+            // Check hash of the file
+            SHA1Managed sha = new SHA1Managed();
+            byte[] hash = sha.ComputeHash(stream);
+            if (verbose)
+            {
+                Console.Write("\nHash of bootarm.efi before patch: ");
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0x50, 0x16, 0x52, 0xBB, 0xAB, 0x34, 0xCE, 0x5C, 0xB2, 0x83, 0x23, 0x1D, 0x77, 0xEB, 0xBD, 0xDD, 0x90, 0x86, 0x4F, 0x1D }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash.");
+                ProgramExit(-1);
+            }
+
+            stream.Close();
+
+            Console.Write("Press Enter to reboot the phone:");
+            Console.ReadLine();
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Reboot from Mass Storage to Normal mode
+            ////////////////////////////////////////////////////////////////////////////
+
+            // When in Mass Storage mode it's only possible to communicate using the com port (Qualcomm HS-USB Diagnostics 9006)
+            Console.Write("\nLook for a phone connected on a USB port and exposing a \"Com Port\" device interface.");
+            devicePath = null;
+            for (int i = 0; i < 15; i++) // Wait 15s max
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_COM_PORT_DEVICE_INTERFACE));
+                if (devicePaths.Count > 0)
+                {
+                    for (int j = 0; j < devicePaths.Count; j++)
+                    {
+                        if (devicePaths[j].IndexOf(VID_PID_QUALCOMM_DIAGNOSTIC, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            devicePath = devicePaths[j];
+                            goto diagnostic_found;
+                        }
+                    }
+                }
+            }
+        diagnostic_found:
+            Console.WriteLine();
+            if (devicePath == null)
+            {
+                Console.WriteLine("Unable to find a phone exposing a \"com port\" device interface.");
+                ProgramExit(-1);
+            }
+            if (verbose) Console.WriteLine("\nPath of the device found:\n{0}", devicePath);
+
+            // Get the port name
+            string[] devicePathElements = devicePath.Split(new char[] { '#' });
+            string registryKey = @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Enum\USB\" + devicePathElements[1] + @"\" + devicePathElements[2] + @"\Device Parameters";
+            if (verbose) Console.WriteLine("\nRegistry key: {0}", registryKey);
+            Process process = new Process();
+            process.StartInfo.FileName = "cmd.exe";
+            process.StartInfo.Arguments= "/c reg query \""+ registryKey+"\" /v PortName ";
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.RedirectStandardOutput = true;
+            if (verbose) Console.WriteLine("\nExecute:\n{0} {1}", process.StartInfo.FileName, process.StartInfo.Arguments);
+            process.Start();
+            process.WaitForExit();
+            string output = process.StandardOutput.ReadToEnd();
+            if (verbose) Console.WriteLine("\nResult:\n{0}",output);
+            string portName = null;
+            Match portNameRegEx = Regex.Match(output, @".*(COM[0-9]+)");
+            if (portNameRegEx.Success)
+            {
+                portName= portNameRegEx.Groups[1].Value;
+            }
+            else
+            {
+                Console.WriteLine("Unable to find the port name.");
+                ProgramExit(-1);
+            }
+
+            if (verbose) Console.WriteLine("Port: {0}", portName);
+            SerialPort port = new SerialPort(portName, 115200);
+            port.ReadTimeout = 1000;
+            port.WriteTimeout = 1000;
+            port.Open();
+
+            Console.WriteLine("\nSend reset command...");
+            // Send Reset command (0x0A) to perform a hardware reset 
+            byte[] resetCommand = Qualcomm.encodeHDLC(new byte[] { 0x0A }, 1); // command (1byte)
+            if (verbose) printRawConsole(resetCommand, resetCommand.Length, true);
+            port.Write(resetCommand, 0, resetCommand.Length);
+
+            port.Close();
 
             ProgramExit(0);
         }
 
         private static void ProgramExit(int exitCode)
         {
-            //Console.ReadLine();
+            Console.ReadLine();
             Environment.Exit(exitCode);
         }
 
@@ -1085,6 +1218,46 @@ namespace wpi
             Console.WriteLine("\t--hex=<.hex programmer file>");
             Console.WriteLine("\t--bin=<.bin engeeniring SBL3 file>");
             Console.WriteLine("[--verbose]");
+        }
+
+        private static void printRawConsole(byte[] values, int length, bool write)
+        {
+            if (write)
+            {
+                Console.WriteLine("< {0} bytes", length);
+            }
+            else
+            {
+                Console.WriteLine("> {0} bytes", length);
+            }
+
+            string characters = "";
+            int normalizedLength = ((length / 19) + 1) * 19; // display 19 values by line
+            for (int i = 0; i < normalizedLength; i++)
+            {
+                if (i < length)
+                {
+                    Console.Write("{0:X2} ", values[i]);
+                    if (values[i] > 31 && values[i] < 127)
+                    {
+                        characters += (char)values[i] + "";
+                    }
+                    else
+                    {
+                        characters += ".";
+                    }
+                }
+                else
+                {
+                    Console.Write("   ");
+                }
+
+                if ((i + 1) % 19 == 0)
+                {
+                    Console.WriteLine(" {0}", characters);
+                    characters = "";
+                }
+            }
         }
     }
 }
