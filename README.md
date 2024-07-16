@@ -1,9 +1,10 @@
 # wpi
 
-The goal was to create a command line version of [WPInternals](https://github.com/ReneLergner/WPinternals) in order to understand how to unlock the bootloader and "root" the Windows Phone OS of Nokia Lumia phones (this last step is still a Work-In-Progress).  
+The goal was to create a command line version of [WPInternals](https://github.com/ReneLergner/WPinternals) in order to understand how to unlock the bootloader and "root" the Windows Phone OS of Nokia Lumia phones.  
 
 > [!CAUTION]
-> Only Lumia 520 is supported.
+> Only Lumia 520 is supported.  
+> Only OS version 8.10.14234.375 is supporter
 
 ## General usage
 
@@ -15,6 +16,9 @@ To unlock the bootloader you have to set `--mode=UNLOCK` and pass 3 files in arg
 ![](wpi01.png)
 
 ![](wpi02.png)
+
+To root the OS you have to set `--mode=ROOT`. No other argument is required with this mode but the program must be run as an Administrator (in order to get SeRestorePrivilege).  
+You can also chain the unlock of the bootloader and the root of the OS by using `--mode=UNLOCK_AND_ROOT`. 
 
 The optional parameter `--verbose` activates the display of some insights (for example the list of partitions of the GPT) but also all the data exchanged between the host computer and the phone (including the content of the flashed partitions). If you activate this option I advise to redirect the output into a file (**more than 35GB are logged when you unlock a phone !**).
 
