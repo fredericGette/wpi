@@ -64,6 +64,13 @@ E6 2A F8 99 94 06 4F 77 CD 3B C1 68 29 50 3B DF 9A 3D 50  .*....Ow.;.h)P;..=P
 Phone Root Hash Key (256 bits): F771E62AF89994064F77CD3BC16829503BDF9A3D506D3FACECAEF3F808C868FD
 ```
 
+## Troubleshooting
+
+If you get this error message, close any other program which can try to communicate with the phone (like the real WPInternals for example):
+```
+Unhandled Exception: System.Exception: Failed to open device. ---> System.Exception: Failed to open WinUSB device handle.
+```
+
 ## Drivers required
 
 We use USB to establish a communication between the host computer and the phone. Three [WinUSB](https://en.wikipedia.org/wiki/WinUSB) drivers have to be installed in the host computer. Each of these drivers is used at a different point of the unlock process. Usually these drivers are installed with the Windows Device Recovery Tool (WDRT) excepted the Qualcomm driver for the diagnostic interface (PID 9006).
