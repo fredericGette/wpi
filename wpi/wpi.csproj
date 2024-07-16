@@ -86,6 +86,7 @@
     <Compile Include="FFU.cs" />
     <Compile Include="GPT.cs" />
     <Compile Include="LZMA.cs" />
+    <Compile Include="NTFS.cs" />
     <Compile Include="Partition.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

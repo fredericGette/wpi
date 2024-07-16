@@ -8,6 +8,8 @@ using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.Management;
 using System.Security.Cryptography;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
 namespace wpi
 {
@@ -38,28 +40,28 @@ namespace wpi
             string mode = getStringParameter("mode", args); // REPAIR = partially repair phone in EDL mode. After repair the phone should be able to boot in "flash" mode. And you can use WPInternals to flash a ffu file.
             verbose = getBoolParameter("verbose", args);  // optional.
 
-            if (!"REPAIR".Equals(mode) && !"UNLOCK".Equals(mode) && !"ROOT".Equals(mode))
+            if (!"REPAIR".Equals(mode) && !"UNLOCK".Equals(mode) && !"ROOT".Equals(mode) && !"UNLOCK_AND_ROOT".Equals(mode))
             {
-                Console.WriteLine("Unkown \"mode={0}\". Only UNLOCK, REPAIR and ROOT are available.", mode);
+                Console.WriteLine("Unkown \"mode={0}\". Only UNLOCK, REPAIR, ROOT and UNLOCK_AND_ROOT are supported.", mode);
                 printUsage();
                 ProgramExit(-1);
             }
 
-            if (("UNLOCK".Equals(mode) || "REPAIR".Equals(mode)) && (ffuPath == null || !File.Exists(ffuPath)))
+            if (("UNLOCK".Equals(mode) || "REPAIR".Equals(mode) || "UNLOCK_AND_ROOT".Equals(mode)) && (ffuPath == null || !File.Exists(ffuPath)))
             {
                 Console.WriteLine("FFU file not found.");
                 printUsage();
                 ProgramExit(-1);
             }
 
-            if ("UNLOCK".Equals(mode) && (engeeniringSBL3Path == null || !File.Exists(engeeniringSBL3Path)))
+            if (("UNLOCK".Equals(mode) || "UNLOCK_AND_ROOT".Equals(mode)) && (engeeniringSBL3Path == null || !File.Exists(engeeniringSBL3Path)))
             {
                 Console.WriteLine("Raw image of an engeeniring SBL3 no found.");
                 printUsage();
                 ProgramExit(-1);
             }
 
-            if (("UNLOCK".Equals(mode) || "REPAIR".Equals(mode)) && (programmerPath == null || !File.Exists(programmerPath)))
+            if (("UNLOCK".Equals(mode) || "REPAIR".Equals(mode) || "UNLOCK_AND_ROOT".Equals(mode)) && (programmerPath == null || !File.Exists(programmerPath)))
             {
                 Console.WriteLine("Emergency programmer no found.");
                 printUsage();
@@ -918,12 +920,27 @@ namespace wpi
             CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
-            ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
-            // Switch to "mass storage" mode to patch the MainOS and EFIESP partitions
-            ////////////////////////////////////////////////////////////////////////////
+            if (!"UNLOCK_AND_ROOT".Equals(mode))
+            {
+                ProgramExit(0);
+            }
 
-            root_phone:
+        ////////////////////////////////////////////////////////////////////////////
+        // ROOT mode 
+        // Switch to "mass storage" mode to patch the MainOS and EFIESP partitions
+        ////////////////////////////////////////////////////////////////////////////
+
+        root_phone:
+            bool rootSuccess = false;
+
+            // Must be run as Administrator to be able to patch the files of the EFIESP and MainOS partitions.
+            WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            WindowsPrincipal principal = new WindowsPrincipal(identity);
+            if (!principal.IsInRole(WindowsBuiltInRole.Administrator))
+            {
+                Console.WriteLine("This program must be run as Administrator for \"ROOT\" mode.");
+                ProgramExit(-1);
+            }
 
             Console.Write("\nLook for a phone connected on a USB port and exposing \"Apollo\" device interface ( = \"normal\" mode )");
             do
@@ -1063,40 +1080,620 @@ namespace wpi
             }
             if (verbose) Console.WriteLine("\nDriver letter of the mass storage: {0}", Drive);
 
-            // Patch the Extensible Firmware Interface System Partition (EFIESP)
+            // Path of the Extensible Firmware Interface System Partition (EFIESP)
             string EFIESPPath = Drive + @"\EFIESP\";
 
-            // Patch file bootarm.efi
-            FileStream stream = File.OpenRead(EFIESPPath + @"efi\boot\bootarm.efi");
+            //Path of the Main Operating System (MainOS)
+            string MainOSPath = Drive + @"\";
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Check hash of files
+            ////////////////////////////////////////////////////////////////////////////
 
             // Check hash of the file
+            string filePath = EFIESPPath + @"efi\boot\bootarm.efi";
+            FileStream stream = File.OpenRead(filePath);
             SHA1Managed sha = new SHA1Managed();
             byte[] hash = sha.ComputeHash(stream);
+            stream.Close();
             if (verbose)
             {
-                Console.Write("\nHash of bootarm.efi before patch: ");
+                Console.Write("\nHash of {0} before patch: ", filePath);
                 for (int i = 0; i < hash.Length; i++)
                 {
                     Console.Write("{0:X2}", hash[i]);
                 }
                 Console.WriteLine("");
             }
-            if (!hash.SequenceEqual(new byte[] { 0x50, 0x16, 0x52, 0xBB, 0xAB, 0x34, 0xCE, 0x5C, 0xB2, 0x83, 0x23, 0x1D, 0x77, 0xEB, 0xBD, 0xDD, 0x90, 0x86, 0x4F, 0x1D }))
+            if (hash.SequenceEqual(new byte[] { 0x02, 0x62, 0xE3, 0x06, 0x4B, 0xA0, 0xD2, 0xB2, 0x72, 0x9B, 0x34, 0x76, 0x16, 0xF0, 0x07, 0xC1, 0x35, 0x7A, 0xA8, 0x41 }))
             {
-                Console.WriteLine("The hash of the file doesn't match the expected hash.");
-                ProgramExit(-1);
+                Console.WriteLine("Files are already patched.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+            if (!hash.SequenceEqual(new byte[] { 0x50, 0x16, 0x52, 0xBB, 0xAB, 0x34, 0xCE, 0x5C, 0xB2, 0x83, 0x23, 0x1D, 0x77, 0xEB, 0xBD, 0xDD, 0x90, 0x86, 0x4F, 0x1D }))
+            //if (!hash.SequenceEqual(new byte[] { 0x02, 0x62, 0xE3, 0x06, 0x4B, 0xA0, 0xD2, 0xB2, 0x72, 0x9B, 0x34, 0x76, 0x16, 0xF0, 0x07, 0xC1, 0x35, 0x7A, 0xA8, 0x41 }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
             }
 
+            // Check hash of the file
+            filePath = EFIESPPath + @"Windows\System32\boot\mobilestartup.efi";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0x20, 0xED, 0xDF, 0x16, 0xCF, 0x5C, 0x28, 0xF1, 0x70, 0x36, 0x53, 0x32, 0x29, 0x0A, 0xCD, 0xBA, 0x8C, 0x2C, 0xD4, 0xC8 }))
+            //if (!hash.SequenceEqual(new byte[] { 0x40, 0x3C, 0x49, 0x4E, 0xCB, 0x15, 0x40, 0xCF, 0x7E, 0x86, 0xB4, 0x21, 0x30, 0x15, 0xC7, 0x51, 0x4D, 0x90, 0x77, 0x65 }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            // Check hash of the file
+            filePath = MainOSPath + @"Windows\System32\SecRuntime.dll";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0xA3, 0x22, 0x22, 0x8B, 0xBD, 0x07, 0x00, 0x49, 0x12, 0x76, 0x21, 0xD3, 0x5C, 0x7C, 0x94, 0x20, 0x5E, 0x30, 0x2D, 0x5D }))
+            //if (!hash.SequenceEqual(new byte[] { 0x7A, 0xD8, 0x91, 0x13, 0xF0, 0x39, 0x66, 0x23, 0xD7, 0xDC, 0x81, 0x55, 0x91, 0xE4, 0xCA, 0x05, 0xB4, 0xB5, 0x22, 0x11 }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            // Check hash of the file
+            filePath = MainOSPath + @"Windows\System32\pacmanserver.dll";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0xD5, 0x99, 0xBD, 0x0D, 0x8D, 0x61, 0xCE, 0xE4, 0x77, 0x20, 0x94, 0x1E, 0xC7, 0xAD, 0x13, 0x8D, 0xEB, 0x53, 0x7F, 0x6E }))
+            //if (!hash.SequenceEqual(new byte[] { 0x8C, 0x1C, 0xA8, 0xE2, 0x50, 0x0E, 0x53, 0x91, 0xD7, 0x9E, 0xA8, 0x00, 0xE6, 0x8C, 0x11, 0x74, 0x21, 0x99, 0x14, 0x81 }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            // Check hash of the file
+            filePath = MainOSPath + @"Windows\System32\SSPISRV.DLL";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0x49, 0x37, 0x09, 0x84, 0xAD, 0x49, 0xFF, 0xCB, 0x5E, 0x33, 0xD4, 0xD9, 0x48, 0x1F, 0xB2, 0xA6, 0x45, 0x9A, 0x58, 0x29 }))
+            //if (!hash.SequenceEqual(new byte[] { 0xEE, 0x96, 0xB7, 0x59, 0x04, 0xF2, 0xD6, 0x38, 0xE3, 0xB3, 0x73, 0x45, 0x84, 0xCC, 0xD9, 0xE9, 0x44, 0x8E, 0x1B, 0x66 }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            // Check hash of the file
+            filePath = MainOSPath + @"Windows\System32\MSV1_0.DLL";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0x9A, 0x4A, 0x52, 0xC9, 0xB6, 0x6B, 0x50, 0x8F, 0x8B, 0x5D, 0x29, 0xDC, 0x8F, 0x76, 0xDD, 0xA7, 0x42, 0x6E, 0xA8, 0x52 }))
+            //if (!hash.SequenceEqual(new byte[] { 0x2B, 0x73, 0xB4, 0x98, 0x69, 0xEB, 0x7C, 0x1E, 0x11, 0xC3, 0x4F, 0xC0, 0x0E, 0x4D, 0x5A, 0x73, 0x87, 0xBF, 0x15, 0x80 }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            // Check hash of the file
+            filePath = MainOSPath + @"Windows\System32\MSCOREE.DLL";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0x5B, 0xB1, 0x97, 0x35, 0x6E, 0x69, 0xC8, 0x7A, 0x48, 0x90, 0x95, 0xC8, 0x19, 0x2C, 0x81, 0x0F, 0x53, 0x53, 0xD5, 0xF1 }))
+            //if (!hash.SequenceEqual(new byte[] { 0x6B, 0x3B, 0xF6, 0xEF, 0x63, 0xE8, 0xA6, 0xCE, 0x2B, 0x49, 0x29, 0x23, 0x86, 0x5A, 0xC4, 0xC4, 0xB0, 0x26, 0x19, 0xE3 }))        
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            // Check hash of the file
+            filePath = MainOSPath + @"Windows\System32\AUDIODG.EXE";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0xA2, 0x99, 0xFF, 0xCB, 0x35, 0x32, 0x2E, 0xFE, 0x09, 0x44, 0xA1, 0xD9, 0x38, 0xEC, 0x8F, 0x3F, 0x8F, 0x8B, 0x49, 0x7B }))
+            //if (!hash.SequenceEqual(new byte[] { 0xA0, 0xBB, 0x16, 0xA9, 0xE7, 0xE3, 0xD3, 0x91, 0x53, 0x6F, 0x0C, 0x32, 0xAF, 0x2D, 0x5D, 0xEB, 0x09, 0x49, 0xAC, 0x2B }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            // Check hash of the file
+            filePath = MainOSPath + @"Windows\System32\NTOSKRNL.EXE";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0xA3, 0xD4, 0x9F, 0x5D, 0x2F, 0x46, 0x99, 0x8B, 0x8C, 0xB5, 0x00, 0xEC, 0x07, 0x05, 0xA9, 0x1D, 0xA2, 0xE1, 0x0B, 0x05 }))
+            //if (!hash.SequenceEqual(new byte[] { 0x14, 0x39, 0xC3, 0xAB, 0x0C, 0x84, 0xAB, 0x93, 0xEC, 0xB7, 0x71, 0x21, 0x74, 0x42, 0x08, 0x49, 0x7F, 0x99, 0x33, 0xA6 }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            // Check hash of the file
+            filePath = MainOSPath + @"Windows\System32\BOOT\winload.efi";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0x7D, 0xCF, 0xEF, 0x11, 0x13, 0xE9, 0xD2, 0xC6, 0x48, 0xB8, 0x57, 0xFD, 0x12, 0x58, 0x57, 0xEC, 0x35, 0xC8, 0xEF, 0xFE }))
+            //if (!hash.SequenceEqual(new byte[] { 0x02, 0x43, 0x9F, 0x74, 0x01, 0x15, 0x47, 0xEC, 0x21, 0x92, 0x89, 0x56, 0x57, 0x79, 0xDF, 0x36, 0x2D, 0x91, 0x21, 0x43 }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            // Check hash of the file
+            filePath = MainOSPath + @"Windows\System32\ci.dll";
+            stream = File.OpenRead(filePath);
+            sha = new SHA1Managed();
+            hash = sha.ComputeHash(stream);
+            stream.Close();
+            if (verbose)
+            {
+                Console.Write("\nHash of {0} before patch: ", filePath);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0x7C, 0xA9, 0x51, 0xF4, 0xA5, 0x80, 0xC9, 0x23, 0xD1, 0x2F, 0xB0, 0x9B, 0x2E, 0xEB, 0xD3, 0x5E, 0x2F, 0x6B, 0xE8, 0xA5 }))
+            //if (!hash.SequenceEqual(new byte[] { 0xF0, 0x5F, 0xE9, 0x6F, 0xB9, 0x95, 0x2B, 0x57, 0xBC, 0x1C, 0x30, 0x79, 0x25, 0x82, 0x02, 0x85, 0x85, 0x78, 0x73, 0x2D }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
+                goto exit_mass_storage;
+            }
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch EFIESP bootarm.efi
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = EFIESPPath + @"efi\boot\bootarm.efi";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            Privilege restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            FileSecurity originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x0003FC20;
+            stream.Write(new byte[] { 0x00,0x20,0x70,0x47 }, 0, 4); // was 0x2D,0xE9,0xF0,0x4F
+            stream.Position = 0x00000148;
+            stream.Write(new byte[] { 0xF0,0xF0,0x0B,0x00 }, 0, 4); // was 0x9E,0xC2,0x0B,0x00
             stream.Close();
 
-            Console.Write("Press Enter to reboot the phone:");
-            Console.ReadLine();
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch EFIESP mobilestartup.efi
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = EFIESPPath + @"Windows\System32\boot\mobilestartup.efi";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+            
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x00026BEC;
+            stream.Write(new byte[] { 0x00, 0x20, 0x70, 0x47 }, 0, 4); // was 0x2D,0xE9,0xF0,0x4F
+            stream.Position = 0x00000140;
+            stream.Write(new byte[] { 0x4F, 0x9B, 0x0B, 0x00 }, 0, 4); // was 0xFD,0x6C,0x0B,0x00
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch MainOS SecRuntime.dll
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = MainOSPath + @"Windows\System32\SecRuntime.dll";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x0000A088;
+            stream.Write(new byte[] { 0x01, 0x21, 0x19, 0x60, 0x00, 0x20, 0x70, 0x47 }, 0, 8); // was 0x0F,0xB4,0x2D,0xE9,0xF0,0x4F,0x0D,0xF1
+            stream.Position = 0x00000148;
+            stream.Write(new byte[] { 0x04, 0x47, 0x02, 0x00 }, 0, 4); // was 0x7F,0x82,0x01,0x00
+            stream.Position = 0x0000D9AC;
+            stream.Write(new byte[] { 0x01, 0x21, 0x01, 0x60, 0x00, 0x20, 0x70, 0x47 }, 0, 8); // was 0x2D,0xE9,0xF0,0x48,0x0D,0xF1,0x10,0x0B
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch MainOS pacmanserver.dll
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = MainOSPath + @"Windows\System32\pacmanserver.dll";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x0004F364;
+            stream.Write(new byte[] { 0x01, 0x49, 0x01, 0x60, 0x00, 0x20, 0x70, 0x47, 0xFF, 0xFF, 0xFF, 0x7F }, 0, 12); // was 0x2D,0xE9,0x70,0x48,0x0D,0xF1,0x0C,0x0B,0xEA,0xF7,0x2A,0xFC
+            stream.Position = 0x00000148;
+            stream.Write(new byte[] { 0x71, 0x10, 0x0E, 0x00 }, 0, 4); // was 0xCD,0xA1,0x0D,0x00
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch MainOS SSPISRV.DLL
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = MainOSPath + @"Windows\System32\SSPISRV.DLL";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x00002454;
+            stream.Write(new byte[] { 0x01, 0x21, 0x01, 0x60, 0x00, 0x20, 0x70, 0x47 }, 0, 8); // was 0x2D,0xE9,0x70,0x48,0x0D,0xF1,0x0C,0x0B
+            stream.Position = 0x00000140;
+            stream.Write(new byte[] { 0xA0, 0x82, 0x01, 0x00 }, 0, 4); // was 0xE6,0xC7,0x00,0x00
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch MainOS MSV1_0.DLL
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = MainOSPath + @"Windows\System32\MSV1_0.DLL";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x000035A8;
+            stream.Write(new byte[] { 0x01, 0x20, 0x70, 0x47 }, 0, 4); // was 0x2D, 0xE9, 0xF0, 0x4F
+            stream.Position = 0x00000148;
+            stream.Write(new byte[] { 0x86, 0xDE, 0x05, 0x00 }, 0, 4); // was 0x33, 0xB0, 0x05, 0x00
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch MainOS MSCOREE.DLL
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = MainOSPath + @"Windows\System32\MSCOREE.DLL";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x0000579C;
+            stream.Write(new byte[] { 0x00, 0x20, 0x70, 0x47 }, 0, 4); // was 0x2D, 0xE9, 0xF0, 0x48
+            stream.Position = 0x00000140;
+            stream.Write(new byte[] { 0x3F, 0xB4, 0x01, 0x00 }, 0, 4); // was 0xED, 0x7E, 0x01, 0x00
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch MainOS AUDIODG.EXE
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = MainOSPath + @"Windows\System32\AUDIODG.EXE";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x00000140;
+            stream.Write(new byte[] { 0x6C, 0x48, 0x03, 0x00 }, 0, 4); // was 0x7F, 0x83, 0x03, 0x00
+            stream.Position = 0x00000180;
+            stream.Write(new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, 0, 8); // was 0x00, 0x10, 0x03, 0x00, 0x10, 0x2B, 0x00, 0x00
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch MainOS NTOSKRNL.EXE
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = MainOSPath + @"Windows\System32\NTOSKRNL.EXE";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x00027F1A;
+            stream.Write(new byte[] { 0x00, 0xBF }, 0, 2); // was 0x01, 0xD1
+            stream.Position = 0x00000158;
+            stream.Write(new byte[] { 0x41, 0x31, 0x50, 0x00 }, 0, 4); // was 0x48, 0x51, 0x50, 0x00
+            stream.Position = 0x00027F6C;
+            stream.Write(new byte[] { 0xF7, 0xE7 }, 0, 2); // was 0xF7, 0xD0
+            stream.Position = 0x000284B8;
+            stream.Write(new byte[] { 0x1D, 0xE0 }, 0, 2); // was 0x1D, 0xD2
+            stream.Position = 0x000284E0;
+            stream.Write(new byte[] { 0x05, 0xE0 }, 0, 2); // was 0x05, 0xD1
+            stream.Position = 0x00028918;
+            stream.Write(new byte[] { 0x02, 0xE0 }, 0, 2); // was 0x14, 0xB9
+            stream.Position = 0x00028A4A;
+            stream.Write(new byte[] { 0x4F, 0xE0 }, 0, 2); // was 0x4F, 0xD0
+            stream.Position = 0x00028B2E;
+            stream.Write(new byte[] { 0x02, 0xE0 }, 0, 2); // was 0x02, 0xD1
+            stream.Position = 0x00028B5E;
+            stream.Write(new byte[] { 0x01, 0xE0 }, 0, 2); // was 0x08, 0xB9
+            stream.Position = 0x002140FC;
+            stream.Write(new byte[] { 0x04, 0xE0 }, 0, 2); // was 0x22, 0xB9
+            stream.Position = 0x002145C4;
+            stream.Write(new byte[] { 0x1A, 0xE0 }, 0, 2); // was 0x1A, 0xD1
+            stream.Position = 0x0021463C;
+            stream.Write(new byte[] { 0x1E, 0xE0 }, 0, 2); // was 0xF3, 0xB1
+            stream.Position = 0x001793EC;
+            stream.Write(new byte[] { 0x00, 0xBF }, 0, 2); // was 0xEB, 0xB9
+            stream.Position = 0x00058448;
+            stream.Write(new byte[] { 0x00, 0xF0, 0xD9, 0xB9 }, 0, 4); // was 0x00, 0xF0, 0xD9, 0x81
+            stream.Position = 0x002306B8;
+            stream.Write(new byte[] { 0x01, 0x20, 0x70, 0x47 }, 0, 4); // was 0x0F, 0xB4, 0x2D, 0xE9
+            stream.Position = 0x00226444;
+            stream.Write(new byte[] { 0xFA, 0xF0, 0x61, 0xBB }, 0, 4); // was 0x3A, 0xF0, 0x61, 0xAB
+            stream.Position = 0x0002C27C;
+            stream.Write(new byte[] { 0x01, 0x20, 0x70, 0x47 }, 0, 4); // was 0x2D, 0xE9, 0xF0, 0x4F
+            stream.Position = 0x00027744;
+            stream.Write(new byte[] { 0x00, 0x20, 0x70, 0x47 }, 0, 4); // was 0x2D, 0xE9, 0x00, 0x48
+            stream.Position = 0x00134C24;
+            stream.Write(new byte[] { 0xFF, 0xF7, 0x85, 0xBF }, 0, 4); // was 0xBA, 0xF1, 0x00, 0x7F
+            stream.Position = 0x00134CD4;
+            stream.Write(new byte[] { 0x02, 0xE0 }, 0, 2); // was 0x13, 0xB1
+            stream.Position = 0x00134D58;
+            stream.Write(new byte[] { 0x00, 0xBF }, 0, 2); // was 0xBD, 0xD1
+            stream.Position = 0x00134D96;
+            stream.Write(new byte[] { 0x00, 0xBF }, 0, 2); // was 0x9E, 0xD1
+            stream.Position = 0x00134E66;
+            stream.Write(new byte[] { 0xAF, 0xF3, 0x00, 0x80 }, 0, 4); // was 0x7F, 0xF4, 0x36, 0xAF
+            stream.Position = 0x00134EA2;
+            stream.Write(new byte[] { 0xFF, 0xF7, 0x46, 0xBE }, 0, 4); // was 0x3F, 0xF4, 0x46, 0xAE
+            stream.Position = 0x00134EE0;
+            stream.Write(new byte[] { 0xFF, 0xF7, 0x27, 0xBE }, 0, 4); // was 0x3F, 0xF4, 0x27, 0xAE
+            stream.Position = 0x00134B36;
+            stream.Write(new byte[] { 0xAF, 0xF3, 0x00, 0x80 }, 0, 4); // was 0x00, 0xF0, 0xE5, 0x81
+            stream.Position = 0x00058C80;
+            stream.Write(new byte[] { 0x00, 0xBF }, 0, 2); // was 0x5C, 0xD1
+            stream.Position = 0x00058CA0;
+            stream.Write(new byte[] { 0x00, 0xBF }, 0, 2); // was 0x4C, 0xD1
+            stream.Position = 0x00058DA6;
+            stream.Write(new byte[] { 0x00, 0xBF }, 0, 2); // was 0xC9, 0xD1
+            stream.Position = 0x0010084E;
+            stream.Write(new byte[] { 0x58, 0xF7, 0x30, 0xBA }, 0, 4); // was 0xBE, 0xF1, 0x00, 0x7F
+            stream.Position = 0x00058CBA;
+            stream.Write(new byte[] { 0x00, 0xBF }, 0, 2); // was 0x40, 0xD0
+            stream.Position = 0x00058E42;
+            stream.Write(new byte[] { 0xFF, 0xF7, 0x34, 0xBF }, 0, 4); // was 0x3F, 0xF4, 0x34, 0xAF
+            stream.Position = 0x00058FCA;
+            stream.Write(new byte[] { 0xFF, 0xF7, 0x72, 0xBE }, 0, 4); // was 0x3F, 0xF4, 0x72, 0xAE
+            stream.Position = 0x00110A84;
+            stream.Write(new byte[] { 0x0B, 0xE0 }, 0, 2); // was 0x0F, 0xD0
+            stream.Position = 0x000B125A;
+            stream.Write(new byte[] { 0xAF, 0xF3, 0x00, 0x80 }, 0, 4); // was 0x1F, 0xF0, 0xF2, 0xA3
+            stream.Position = 0x000B1260;
+            stream.Write(new byte[] { 0xAF, 0xF3, 0x00, 0x80 }, 0, 4); // was 0x1F, 0xF0, 0xE6, 0xA3
+            stream.Position = 0x00027778;
+            stream.Write(new byte[] { 0x00, 0xBF }, 0, 2); // was 0x02, 0xD1
+            stream.Position = 0x001008D2;
+            stream.Write(new byte[] { 0x03, 0xE0 }, 0, 2); // was 0x03, 0xD1
+            stream.Position = 0x001008E0;
+            stream.Write(new byte[] { 0x03, 0xE0 }, 0, 2); // was 0x03, 0xD0
+            stream.Position = 0x0010097E;
+            stream.Write(new byte[] { 0x58, 0xF7, 0x98, 0xB9 }, 0, 4); // was 0x18, 0xF4, 0x98, 0xA1
+            stream.Position = 0x00110ADC;
+            stream.Write(new byte[] { 0x09, 0xE0 }, 0, 2); // was 0x11, 0xD0
+            stream.Position = 0x00110B3A;
+            stream.Write(new byte[] { 0x11, 0xE0 }, 0, 2); // was 0x0B, 0xD0
+            stream.Position = 0x00226546;
+            stream.Write(new byte[] { 0xD3, 0xE7 }, 0, 2); // was 0xD3, 0xD0
+            stream.Position = 0x00226550;
+            stream.Write(new byte[] { 0xAF, 0xF3, 0x00, 0x80 }, 0, 4); // was 0x7A, 0xF0, 0x8A, 0xAA
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch MainOS winload.efi
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = MainOSPath + @"Windows\System32\BOOT\winload.efi";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x000331C4;
+            stream.Write(new byte[] { 0x00, 0x20, 0x70, 0x47 }, 0, 4); // was 0x2D, 0xE9, 0xF0, 0x4F
+            stream.Position = 0x00000140;
+            stream.Write(new byte[] { 0xBC, 0x83, 0x0C, 0x00 }, 0, 4); // was 0x6A, 0x55, 0x0C, 0x00
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+
+            ////////////////////////////////////////////////////////////////////////////
+            // ROOT mode 
+            // Patch MainOS ci.dll
+            ////////////////////////////////////////////////////////////////////////////
+
+            filePath = MainOSPath + @"Windows\System32\ci.dll";
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            restorePrivilege = new Privilege(Privilege.Restore);
+            restorePrivilege.Enable();
+            originalACL = Privilege.prepareFileModification(filePath);
+
+            // Patch file
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x000179FC;
+            stream.Write(new byte[] { 0x1B, 0xE0 }, 0, 2); // was 0x1B, 0xD1
+            stream.Position = 0x00000158;
+            stream.Write(new byte[] { 0x3E, 0x79, 0x07, 0x00 }, 0, 4); // was 0x3E, 0x6A, 0x07, 0x00
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
+            rootSuccess = true;
 
             ////////////////////////////////////////////////////////////////////////////
             // ROOT mode 
             // Reboot from Mass Storage to Normal mode
             ////////////////////////////////////////////////////////////////////////////
-
+        exit_mass_storage:
             // When in Mass Storage mode it's only possible to communicate using the com port (Qualcomm HS-USB Diagnostics 9006)
             Console.Write("\nLook for a phone connected on a USB port and exposing a \"Com Port\" device interface.");
             devicePath = null;
@@ -1166,7 +1763,10 @@ namespace wpi
 
             port.Close();
 
-            ProgramExit(0);
+            if (rootSuccess)
+                ProgramExit(0);
+            else
+                ProgramExit(-1);
         }
 
         private static void ProgramExit(int exitCode)
@@ -1210,6 +1810,7 @@ namespace wpi
         public static void printUsage()
         {
             Console.WriteLine("Usage:");
+            Console.WriteLine("[--verbose]");
             Console.WriteLine("--mode=REPAIR");
             Console.WriteLine("\t--ffu=<.ffu file>");
             Console.WriteLine("\t--hex=<.hex programmer file>");
@@ -1217,7 +1818,11 @@ namespace wpi
             Console.WriteLine("\t--ffu=<.ffu file>");
             Console.WriteLine("\t--hex=<.hex programmer file>");
             Console.WriteLine("\t--bin=<.bin engeeniring SBL3 file>");
-            Console.WriteLine("[--verbose]");
+            Console.WriteLine("--mode=ROOT");
+            Console.WriteLine("--mode=UNLOCK_AND_ROOT");
+            Console.WriteLine("\t--ffu=<.ffu file>");
+            Console.WriteLine("\t--hex=<.hex programmer file>");
+            Console.WriteLine("\t--bin=<.bin engeeniring SBL3 file>");
         }
 
         private static void printRawConsole(byte[] values, int length, bool write)
