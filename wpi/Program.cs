@@ -35,6 +35,7 @@ namespace wpi
             // And check their validity
             ////////////////////////////////////////////////////////////////////////////
             string ffuPath = getStringParameter("ffu", args); // FFU file (.ffu) compatible with the phone.
+            string donorFfuPath = getStringParameter("donorFfu", args); // FFU file (.ffu) containing a patchable version of mobilestartup.efi
             string engeeniringSBL3Path = getStringParameter("bin", args); // Raw image of an engeeniring SBL3 file (.bin) compatible with the phone. Not needed in REPAIR mode.
             string programmerPath = getStringParameter("hex", args); // Programmer file (.hex) compatible with the phone.
             string mode = getStringParameter("mode", args); // REPAIR = partially repair phone in EDL mode. After repair the phone should be able to boot in "flash" mode. And you can use WPInternals to flash a ffu file.
@@ -50,6 +51,13 @@ namespace wpi
             if (("UNLOCK".Equals(mode) || "REPAIR".Equals(mode) || "UNLOCK_AND_ROOT".Equals(mode)) && (ffuPath == null || !File.Exists(ffuPath)))
             {
                 Console.WriteLine("FFU file not found.");
+                printUsage();
+                ProgramExit(-1);
+            }
+
+            if (("UNLOCK".Equals(mode) || "UNLOCK_AND_ROOT".Equals(mode)) && (donorFfuPath == null || !File.Exists(donorFfuPath)))
+            {
+                Console.WriteLine("Donor FFU file not found.");
                 printUsage();
                 ProgramExit(-1);
             }
@@ -81,6 +89,20 @@ namespace wpi
                 ProgramExit(-1);
             }
             FFU ffu = new FFU(ffuPath);
+
+            ////////////////////////////////////////////////////////////////////////////
+            Console.Write("\nPrepare a patched version of the EFIESP partition");
+            // We need a patched mobilestartup.efi from Windows 10 (I don't know why).
+            // We get it from a "donor FFU".
+            // In our case the donor FFU is:
+            //   RM1085_1078.0053.10586.13169.13829.034EA6_retail_prod_signed.ffu
+            //   OS version 10.0.10586.318
+            FFU donorFFU = new FFU(donorFfuPath);
+            byte[] EFIESPcontent = ffu.GetPartition("EFIESP");
+            // Overwrite the file mobilestartup.efi of the EFIESP partition with the one coming from the donor FFU.
+            // Then patch this file.
+            EFIESP efiEsp = new EFIESP(EFIESPcontent);
+            ////////////////////////////////////////////////////////////////////////////
 
             // Get Root Hash Key (RHK) contained in SBL1 for later check (must be the same as the one of the phone).
             byte[] sbl1Content = ffu.GetPartition("SBL1");
@@ -154,6 +176,8 @@ namespace wpi
             // Start the UNLOCK mode 
             // and prepare the content of the partitions we will flash later into the phone
             ////////////////////////////////////////////////////////////////////////////
+
+
 
             // Prepare a patched SBL2 that will be flashed into the phone
             // Replace 0x28, 0x00, 0xD0, 0xE5 : ldrb r0, [r0, #0x28]
@@ -806,7 +830,6 @@ namespace wpi
             if ((WINSECAPPStart + WINSECAPPLength) > 0x1E7FE00)
                 WINSECAPPLength = 0x1E7FE00 - WINSECAPPStart;
 
-            // repair_bricked_phone: invert the comment of the 4 following lines
             Console.WriteLine("\nFlash the WINSECAPP partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", ffu.gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP").Length);
             Qualcomm.Flash((uint)ffu.gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP"), WINSECAPPLength, EmergencyDeviceInterface);
 
@@ -874,6 +897,13 @@ namespace wpi
             }
             // Open the interface
             CareConnectivityDeviceInterface = new USB(devicePath);
+
+            // Unlock UEFI
+            // Remove secure boot at the UEFI level
+            // Allow setting of 'testsigning' for example.
+
+
+
 
             ////////////////////////////////////////////////////////////////////////////
             // UNLOCK mode 
@@ -1771,6 +1801,7 @@ namespace wpi
 
         private static void ProgramExit(int exitCode)
         {
+            Console.WriteLine("Press ENTER.");
             Console.ReadLine();
             Environment.Exit(exitCode);
         }

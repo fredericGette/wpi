@@ -83,6 +83,7 @@
     <Compile Include="CareConnectivity.cs" />
     <Compile Include="CRC16.cs" />
     <Compile Include="CRC32.cs" />
+    <Compile Include="EFIESP.cs" />
     <Compile Include="FFU.cs" />
     <Compile Include="GPT.cs" />
     <Compile Include="LZMA.cs" />
