@@ -106,6 +106,8 @@ The big picture of the unlock procedure is the following:
 > Starting from this version it's possible to activate _testsigning_ in BCD (to load non officially signed kernel drivers for example).  
 > This is possible because the phone is put in a kind of developper mode (a string "Not For Resale" is visible at the bottom of the Windows Phone boot screen).
 
+![NotForResale.jpg](NotForResale.jpg)
+
 
 ## Compilation
 
