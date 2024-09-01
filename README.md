@@ -77,6 +77,8 @@ If you get this error message, close any other program which can try to communic
 Unhandled Exception: System.Exception: Failed to open device. ---> System.Exception: Failed to open WinUSB device handle.
 ```
 
+The optional parameter `--repair` can be used when the phone is blocked in Emergency Download (EDL) mode. 
+
 ## Drivers required
 
 We use USB to establish a communication between the host computer and the phone. Three [WinUSB](https://en.wikipedia.org/wiki/WinUSB) drivers have to be installed in the host computer. Each of these drivers is used at a different point of the unlock process. Usually these drivers are installed with the Windows Device Recovery Tool (WDRT) excepted the Qualcomm driver for the diagnostic interface (PID 9006).

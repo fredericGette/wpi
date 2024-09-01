@@ -40,6 +40,7 @@ namespace wpi
             string unlockedUefiBsNvPath = getStringParameter("uefiBsNvBin", args); // Raw image of an UEFI_BS_NV file (.bin) patched to deactivate Secure Boot. Not needed in REPAIR mode.
             string programmerPath = getStringParameter("hex", args); // Programmer file (.hex) compatible with the phone.
             verbose = getBoolParameter("verbose", args);  // optional.
+            bool repair = getBoolParameter("repair", args);  // optional.
 
             if (ffuPath == null || !File.Exists(ffuPath))
             {
@@ -142,6 +143,17 @@ namespace wpi
             UEFI uefiContent = null;
             byte[] mobilestartupefiContent = null;
             byte[] uefiBsNvContent = null;
+            if (repair)
+            {
+                // Repair mode
+                // Communicate directly with the phone in Emergency Download (EDL) mode.
+                gptContent = new GPT(ffu.GetSectors(0x01, 0x22), 0x4200);
+                sbl1Partition = ffu.gpt.GetPartition("SBL1");
+                sbl2Partition = ffu.gpt.GetPartition("SBL2");
+                uefiPartition = ffu.gpt.GetPartition("UEFI");
+                uefiContent = new UEFI(ffu.GetPartition("UEFI"), false);
+                goto repair_bricked_phone;
+            }
 
             ////////////////////////////////////////////////////////////////////////////
             // Start the unlock 
@@ -400,11 +412,13 @@ namespace wpi
             if (!secureBoot)
             {
                 Console.WriteLine("**** Bootloader is already unlocked ****");
-                Console.WriteLine("Continue booting in \"normal\" mode.");
-                byte[] RebootNormalCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR = Reboot
-                CareConnectivityDeviceInterface.WritePipe(RebootNormalCommand, RebootNormalCommand.Length);
-                CareConnectivityDeviceInterface.Close();
-                ProgramExit(-1);
+                // But, as we are going to flash the original FFU, it is going to be locked again.
+
+                //Console.WriteLine("Continue booting in \"normal\" mode.");
+                //byte[] RebootNormalCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR = Reboot
+                //CareConnectivityDeviceInterface.WritePipe(RebootNormalCommand, RebootNormalCommand.Length);
+                //CareConnectivityDeviceInterface.Close();
+                //ProgramExit(-1);
             }
 
             ////////////////////////////////////////////////////////////////////////////
@@ -458,18 +472,6 @@ namespace wpi
             CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
             gptContent = CareConnectivity.parseNOKT(Buffer, (int)bytesRead);
 
-            // Check if the bootloader of the phone is already unlocked
-            // We test the presence of a partition named "HACK"
-            if (gptContent.GetPartition("HACK") != null)
-            {
-                Console.WriteLine("**** Bootloader is already unlocked ****");
-                Console.WriteLine("Continue booting in \"normal\" mode.");
-                byte[] ContinueBootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x43, 0x42, 0x57 }; // NOKXCBW : Continue Boot command (Common Extended Message)
-                CareConnectivityDeviceInterface.WritePipe(ContinueBootCommand, ContinueBootCommand.Length);
-                CareConnectivityDeviceInterface.Close();
-                ProgramExit(-1);
-            }
-
             // Check first and last sectors of the partitions we are going to flash
             // because the "Lumia V1 programmer" can only flashes sectors below 0xF400
             // Theoritically, the last sector of the partition WINSECAPP is 0xF3FF
@@ -512,14 +514,34 @@ namespace wpi
             // We replace the last sector of the SBL1 partition by a new partition named "HACK"
             // This partition has the same property (GUID, type GUID, attributes) as the SBL2 partition
             // And we mask the GUID and type GUID of the real SBL2 partition.
-            hackPartition = new Partition();
+
+            // Check if the bootloader of the phone is already unlocked
+            // We test the presence of a partition named "HACK"
+            hackPartition = gptContent.GetPartition("HACK");
+            if (hackPartition != null)
+            {
+                Console.WriteLine("**** Bootloader is already unlocked ****");
+                // But, as we are going to flash the original FFU, it is going to be locked again.
+
+                //Console.WriteLine("Continue booting in \"normal\" mode.");
+                //byte[] ContinueBootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x58, 0x43, 0x42, 0x57 }; // NOKXCBW : Continue Boot command (Common Extended Message)
+                //CareConnectivityDeviceInterface.WritePipe(ContinueBootCommand, ContinueBootCommand.Length);
+                //CareConnectivityDeviceInterface.Close();
+                //ProgramExit(-1);
+            }
+            else
+            {
+                hackPartition = new Partition();
+                gptContent.partitions.Add(hackPartition);
+            }
+           
             hackPartition.name = "HACK";
             hackPartition.attributes = sbl2Partition.attributes;
             hackPartition.firstSector = sbl1Partition.lastSector;
             hackPartition.lastSector = sbl1Partition.lastSector;
             hackPartition.partitionTypeGuid = sbl2Partition.partitionTypeGuid;
             hackPartition.partitionGuid = sbl2Partition.partitionGuid;
-            gptContent.partitions.Add(hackPartition);
+         
             sbl1Partition.lastSector = sbl1Partition.lastSector - 1;
             sbl2Partition.partitionTypeGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
             sbl2Partition.partitionGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
@@ -528,8 +550,8 @@ namespace wpi
             gptContent.Rebuild();
 
             ////////////////////////////////////////////////////////////////////////////
-            // Reboot in flash mode to "brick" the phone
-            // This is the easiest way to reach our goal: have a phone in Emergency DownLoad (EDL) mode.
+            // Reboot in flash mode to flash the original FFU the phone
+            // This step is not required to unlock/root the phone.
             ////////////////////////////////////////////////////////////////////////////
 
             Console.WriteLine("\nReturning to \"flash\" mode to start flashing the phone...");
@@ -565,7 +587,7 @@ namespace wpi
             // Open the interface
             CareConnectivityDeviceInterface = new USB(devicePath);
 
-            Console.WriteLine("\n\"Soft brick\" the phone in order to boot in EDL mode after the next reboot.");
+            Console.Write("\nFlash the original FFU on the phone.");
             // To enter Emergency DownLoad mode (EDL) we are going to erase a part of the eMMC to "brick" the phone.
             // First, we send the header of a signed FFU file in order to start the flashing:
             byte[] ffuHeader = ffu.getCombinedHeader();
@@ -605,11 +627,197 @@ namespace wpi
             int flashReturnCode = (int)((Buffer[6] << 8) + Buffer[7]);
             if (flashReturnCode != 0)
             {
-                Console.WriteLine("Flash of FFU header failed (return code 0x{0:X16})", flashReturnCode);
+                Console.WriteLine("\nFlash of FFU header failed (return code 0x{0:X16})", flashReturnCode);
                 ProgramExit(-1);
             }
 
-            // Send 1 empty chunk (according to layout in FFU headers, it will be written to first and last chunk) ?
+            // We flash the content of the FFU in order to get a phone with a consistent content.
+            System.IO.FileStream FfuFile = new System.IO.FileStream(ffu.Path, System.IO.FileMode.Open, System.IO.FileAccess.Read);
+            FfuFile.Seek(ffuHeader.Length, 0);
+            int Position = ffuHeader.Length;
+            byte[] Payload;
+            int ChunkCount = 0;
+            Payload = new byte[ffu.ChunkSize];
+            while (Position < FfuFile.Length)
+            {
+                if (!verbose && ((Position-ffuHeader.Length)/Payload.Length) % 50 == 0) Console.Write("."); // Progress bar
+
+                FfuFile.Read(Payload, 0, Payload.Length);
+                ChunkCount++;
+
+                secureFlashCommand = new byte[Payload.Length + 28]; // command header size = 28 bytes
+                secureFlashCommand[0] = 0x4E; // N
+                secureFlashCommand[1] = 0x4F; // O
+                secureFlashCommand[2] = 0x4B; // K
+                secureFlashCommand[3] = 0x58; // X
+                secureFlashCommand[4] = 0x46; // F
+                secureFlashCommand[5] = 0x53; // S
+                secureFlashCommand[6] = 0x00; // Protocol version = 0x0001
+                secureFlashCommand[7] = 0x01;
+                secureFlashCommand[8] = (byte)((ChunkCount * 100 / (int)ffu.TotalChunkCount) & 0xFF); // Progress
+                secureFlashCommand[11] = 1; // Subblock count = 1
+                secureFlashCommand[12] = 0x00; // Subblock type for "ChunkData" = 0x0000000C
+                secureFlashCommand[13] = 0x00;
+                secureFlashCommand[14] = 0x00;
+                secureFlashCommand[15] = 0x0C;
+                subBlockLength = (uint)Payload.Length + 8;
+                secureFlashCommand[16] = (byte)((subBlockLength >> 24) & 0xFF);
+                secureFlashCommand[17] = (byte)((subBlockLength >> 16) & 0xFF);
+                secureFlashCommand[18] = (byte)((subBlockLength >> 8) & 0xFF);
+                secureFlashCommand[19] = (byte)(subBlockLength & 0xFF);
+                payloadLength = (uint)Payload.Length;
+                secureFlashCommand[20] = (byte)((payloadLength >> 24) & 0xFF);
+                secureFlashCommand[21] = (byte)((payloadLength >> 16) & 0xFF);
+                secureFlashCommand[22] = (byte)((payloadLength >> 8) & 0xFF);
+                secureFlashCommand[23] = (byte)(payloadLength & 0xFF);
+                secureFlashCommand[24] = 0; // Data options = 0 (1 = verify)
+                System.Buffer.BlockCopy(Payload, 0, secureFlashCommand, 28, Payload.Length);
+                CareConnectivityDeviceInterface.WritePipe(secureFlashCommand, secureFlashCommand.Length);
+                CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+                flashReturnCode = (int)((Buffer[6] << 8) + Buffer[7]);
+                if (flashReturnCode != 0)
+                {
+                    Console.WriteLine("Flash of FFU header failed (return code 0x{0:X16})", flashReturnCode);
+                    ProgramExit(-1);
+                }
+
+                Position += Payload.Length;
+            }
+            FfuFile.Close();
+
+            // Reboot the phone.
+            RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR = Reboot
+            CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
+            CareConnectivityDeviceInterface.Close();
+
+            ////////////////////////////////////////////////////////////////////////////
+            // Reboot in flash mode to "brick" the phone
+            // This is the easiest way to reach our goal: have a phone in Emergency DownLoad (EDL) mode.
+            ////////////////////////////////////////////////////////////////////////////
+
+            Console.WriteLine("\n\nWe are rebooting to normal mode, then to flash mode again.");
+            Console.WriteLine("But as we flashed an original FFU on the phone, these 2 reboots are going to be longer than usual.");
+            Console.Write("\nLook for a phone exposing \"Apollo\" device interface ( = \"normal\" mode )");
+            do
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_APOLLO_DEVICE_INTERFACE));
+            } while (devicePaths.Count == 0);
+            Console.WriteLine();
+            if (devicePaths.Count != 1)
+            {
+                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
+                ProgramExit(-1);
+            }
+            devicePath = devicePaths[0];
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
+
+            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_NORMAL_MODE, StringComparison.OrdinalIgnoreCase) == -1)
+            {
+                // Vendor ID 0x0421 : Nokia Corporation
+                // Product ID 0x0661 : Lumia 520 / 620 / 820 / 920 Normal mode
+                Console.WriteLine("Incorrect VID (expecting 0x0421) and/or incorrect PID (expecting 0x0661.)");
+                ProgramExit(-1);
+            }
+
+            Console.WriteLine("\nSwitch to \"flash\" mode...");
+
+            ApolloDeviceInterface = new USB(devicePath);
+
+            // Send command to reboot in flash mode
+            Request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"SetDeviceMode\",\"params\":{\"DeviceMode\":\"Flash\",\"ResetMethod\":\"HwReset\",\"MessageVersion\":0}}";
+            OutBuffer = System.Text.Encoding.ASCII.GetBytes(Request);
+            ApolloDeviceInterface.WritePipe(OutBuffer, OutBuffer.Length);
+
+            Buffer = new byte[0x8000]; 
+            ApolloDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+            ApolloDeviceInterface.Close();
+
+            Buffer = new byte[0x8000]; 
+            // Look for a phone connected on a USB port and exposing interface
+            // - known as "Care Connectivity" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
+            // - known as "Old Combi" interface in WPInternals
+            // This interface allows flash commands starting with the signature "NOK" (to reboot the phone for example).
+            // Notes: 
+            // this interface is also exposed when the phone is in "normal" mode.
+            // But in "normal" mode the PID of the device is 0x0661
+            // Whereas in "flash" or "bootloader" mode the PID of the device is 0x066E
+            Console.Write("\nLook for a phone exposing \"Care Connectivity\" device interface.");
+            for (int i = 0; i < 120; i++) // Wait 120s max
+            {
+                Thread.Sleep(1000);
+                Console.Write(".");
+                devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE));
+                if (devicePaths.Count > 0)
+                {
+                    for (int j = 0; j < devicePaths.Count; j++)
+                    {
+                        if (devicePaths[j].IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            devicePath = devicePaths[j];
+                            goto flash_found2;
+                        }
+                    }
+                }
+            } while (devicePaths.Count == 0) ;
+        flash_found2:
+            Console.WriteLine();
+            if (devicePath == null)
+            {
+                Console.WriteLine("Unable to find a phone exposing a \"Care Connectivity\" device interface.");
+                ProgramExit(-1);
+            }
+            devicePath = devicePaths[0];
+            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
+
+            CareConnectivityDeviceInterface = new USB(devicePath);
+
+            // To enter Emergency DownLoad mode (EDL) we are going to erase a part of the eMMC to "brick" the phone.
+            // First, we send the header of a signed FFU file in order to start the flashing:
+            ffuHeader = ffu.getCombinedHeader();
+            secureFlashCommand = new byte[ffuHeader.Length + 32]; // command header size = 32 bytes
+            secureFlashCommand[0] = 0x4E; // N
+            secureFlashCommand[1] = 0x4F; // O
+            secureFlashCommand[2] = 0x4B; // K
+            secureFlashCommand[3] = 0x58; // X
+            secureFlashCommand[4] = 0x46; // F
+            secureFlashCommand[5] = 0x53; // S
+            secureFlashCommand[6] = 0x00; // Protocol version = 0x0001
+            secureFlashCommand[7] = 0x01;
+            secureFlashCommand[8] = 0; // Progress = 0%
+            secureFlashCommand[11] = 1; // Subblock count = 1
+            secureFlashCommand[12] = 0x00; // Subblock type for "Header" = 0x0000000B
+            secureFlashCommand[13] = 0x00;
+            secureFlashCommand[14] = 0x00;
+            secureFlashCommand[15] = 0x0B;
+            subBlockLength = (uint)ffuHeader.Length + 12;
+            secureFlashCommand[16] = (byte)((subBlockLength >> 24) & 0xFF);
+            secureFlashCommand[17] = (byte)((subBlockLength >> 16) & 0xFF);
+            secureFlashCommand[18] = (byte)((subBlockLength >> 8) & 0xFF);
+            secureFlashCommand[19] = (byte)(subBlockLength & 0xFF);
+            secureFlashCommand[20] = 0x00; // Header type = 0x00000000
+            secureFlashCommand[21] = 0x00;
+            secureFlashCommand[22] = 0x00;
+            secureFlashCommand[23] = 0x00;
+            payloadLength = (uint)ffuHeader.Length;
+            secureFlashCommand[24] = (byte)((payloadLength >> 24) & 0xFF);
+            secureFlashCommand[25] = (byte)((payloadLength >> 16) & 0xFF);
+            secureFlashCommand[26] = (byte)((payloadLength >> 8) & 0xFF);
+            secureFlashCommand[27] = (byte)(payloadLength & 0xFF);
+            secureFlashCommand[28] = 0; // Header options = 0
+            System.Buffer.BlockCopy(ffuHeader, 0, secureFlashCommand, 32, ffuHeader.Length);
+            CareConnectivityDeviceInterface.WritePipe(secureFlashCommand, secureFlashCommand.Length);
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
+            flashReturnCode = (int)((Buffer[6] << 8) + Buffer[7]);
+            if (flashReturnCode != 0)
+            {
+                Console.WriteLine("\nFlash of FFU header failed (return code 0x{0:X16})", flashReturnCode);
+                ProgramExit(-1);
+            }
+
+            Console.WriteLine("\n\"Soft brick\" the phone in order to boot in EDL mode after the next reboot.");
+            // Third: Send 1 empty chunk (according to layout in FFU headers, it will be written to first and last chunk) ?
             // Erase the 256 first sectors (MBR + GPT ?) ?
             byte[] EmptyChunk = new byte[0x20000];
             Array.Clear(EmptyChunk, 0, 0x20000);
@@ -645,7 +853,7 @@ namespace wpi
             flashReturnCode = (int)((Buffer[6] << 8) + Buffer[7]);
             if (flashReturnCode != 0)
             {
-                Console.WriteLine("Flash of FFU header failed (return code 0x{0:X16})", flashReturnCode);
+                Console.WriteLine("Flash of FFU empty chunk failed (return code 0x{0:X16})", flashReturnCode);
                 ProgramExit(-1);
             }
 
@@ -664,6 +872,7 @@ namespace wpi
             // Upload and start the programmer
             ////////////////////////////////////////////////////////////////////////////
 
+         repair_bricked_phone:
             Buffer = new byte[0x8000];
 
             Console.Write("\nLook for a phone exposing \"Lumia Emergency\" device interface");
@@ -797,8 +1006,11 @@ namespace wpi
                 ProgramExit(-1);
             }
 
-            Console.WriteLine("\nFlash the HACK partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", hackPartition.firstSector, hackContent.Length);
-            Qualcomm.Flash((uint)hackPartition.firstSector * 512, hackContent, (uint)hackContent.Length, EmergencyDeviceInterface);
+            if (!repair)
+            {
+                Console.WriteLine("\nFlash the HACK partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", hackPartition.firstSector, hackContent.Length);
+                Qualcomm.Flash((uint)hackPartition.firstSector * 512, hackContent, (uint)hackContent.Length, EmergencyDeviceInterface);
+            }
 
             // To minimize risk of brick we also flash unmodified partitions (MBR, SBL1, TZ, RPM, WINSECAPP)
             // Note: SBL1 is not really modified, just truncated by the HACK partition.
@@ -812,8 +1024,16 @@ namespace wpi
             Console.WriteLine("\nFlash the SBL2 partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", sbl2Partition.firstSector, sbl2Content.Length);
             Qualcomm.Flash((uint)sbl2Partition.firstSector * 512, sbl2Content, (uint)sbl2Content.Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the engeeniring SBL3 partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", gptContent.GetPartition("SBL3").firstSector, engeeniringSbl3Content.Length);
-            Qualcomm.Flash((uint)gptContent.GetPartition("SBL3").firstSector * 512, engeeniringSbl3Content, (uint)engeeniringSbl3Content.Length, EmergencyDeviceInterface);
+            if (repair)
+            {
+                Console.WriteLine("\nFlash the SBL3 partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", ffu.gpt.GetPartition("SBL3").firstSector, ffu.GetPartition("SBL3").Length);
+                Qualcomm.Flash((uint)ffu.gpt.GetPartition("SBL3").firstSector * 512, ffu.GetPartition("SBL3"), (uint)ffu.GetPartition("SBL3").Length, EmergencyDeviceInterface);
+            }
+            else
+            {
+                Console.WriteLine("\nFlash the engeeniring SBL3 partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", gptContent.GetPartition("SBL3").firstSector, engeeniringSbl3Content.Length);
+                Qualcomm.Flash((uint)gptContent.GetPartition("SBL3").firstSector * 512, engeeniringSbl3Content, (uint)engeeniringSbl3Content.Length, EmergencyDeviceInterface);
+            }
 
             Console.WriteLine("\nFlash the UEFI partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", uefiPartition.firstSector, uefiContent.Binary.Length);
             Qualcomm.Flash((uint)uefiPartition.firstSector * 512, uefiContent.Binary, (uint)uefiContent.Binary.Length, EmergencyDeviceInterface);
@@ -865,6 +1085,13 @@ namespace wpi
             }
 
             EmergencyDeviceInterface.Close();
+
+            if (repair)
+            {
+                // No need to go further in repair mode.
+                // We should be able to use another tool (like WPinternals) to finish the repair.
+                ProgramExit(0); 
+            }
 
             Console.WriteLine("\nAfter reboot, the phone should be in \"flash\" mode \"in-progress\" : A big \"NOKIA\" in the top part of the screen on a dark red background.\n");
             // This is because we previously interrupt a flash session to brick the phone...
