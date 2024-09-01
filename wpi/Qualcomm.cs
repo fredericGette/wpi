@@ -80,16 +80,16 @@ namespace wpi
             byte imageType = values[Offset + 8];
             if (imageType == 0x0D)
             {
-                Console.WriteLine("EhostDL image detected."); // Emergency Host Download 
+                if (Program.verbose) Console.WriteLine("EhostDL image detected."); // Emergency Host Download 
             }
 
 
             uint HeaderOffset = Offset + 20; // total size of "Long Header"
             uint ImageOffset = values[HeaderOffset] + ((uint)values[HeaderOffset + 1] << 8) + ((uint)values[HeaderOffset + 2] << 16) + ((uint)values[HeaderOffset + 2] << 24);
-            Console.WriteLine("Image offset = 0x{0:X8} ", ImageOffset);
+            if (Program.verbose) Console.WriteLine("Image offset = 0x{0:X8} ", ImageOffset);
 
             uint ImageAddress = values[HeaderOffset + 4] + ((uint)values[HeaderOffset + 5] << 8) + ((uint)values[HeaderOffset + 6] << 16) + ((uint)values[HeaderOffset + 7] << 24);
-            Console.WriteLine("Image address = 0x{0:X8} ", ImageAddress);
+            if (Program.verbose) Console.WriteLine("Image address = 0x{0:X8} ", ImageAddress);
             // To disassemble the binary, use the ImageAddress-ImageOffset to rebase the code
             // then ImageAddress is the entry point.
 
@@ -111,12 +111,16 @@ namespace wpi
                         // This is the last certificate. So this is the root key.
                         RootKeyHash = new SHA256Managed().ComputeHash(values, (int)CurrentCertificateOffset, (int)CertificateSize);
 
-                        Console.WriteLine("Root Hash Key ({0} bits): ", RootKeyHash.Length * 8);
-                        for (int i = 0; i < RootKeyHash.Length; i++)
+                        if (Program.verbose)
                         {
-                            Console.Write("{0:X2}", RootKeyHash[i]);
+                            Console.WriteLine("Root Hash Key ({0} bits): ", RootKeyHash.Length * 8);
+                            for (int i = 0; i < RootKeyHash.Length; i++)
+                            {
+                                Console.Write("{0:X2}", RootKeyHash[i]);
+                            }
+                            Console.WriteLine("");
                         }
-                        Console.WriteLine("");
+                            
                     }
                     CurrentCertificateOffset += CertificateSize;
                 }
@@ -129,12 +133,15 @@ namespace wpi
                         // This is the last certificate. So this is the root key.
                         RootKeyHash = new SHA256Managed().ComputeHash(values, (int)CurrentCertificateOffset, (int)CertificateSize);
 
-                        Console.WriteLine("Root Hash Key ({0} bits): ", RootKeyHash.Length * 8);
-                        for (int i = 0; i < RootKeyHash.Length; i++)
+                        if (Program.verbose)
                         {
-                            Console.Write("{0:X2}", RootKeyHash[i]);
+                            Console.WriteLine("Root Hash Key ({0} bits): ", RootKeyHash.Length * 8);
+                            for (int i = 0; i < RootKeyHash.Length; i++)
+                            {
+                                Console.Write("{0:X2}", RootKeyHash[i]);
+                            }
+                            Console.WriteLine("");
                         }
-                        Console.WriteLine("");
                     }
                     break;
                 }

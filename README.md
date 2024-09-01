@@ -8,17 +8,22 @@ The goal was to create a command line version of [WPInternals](https://github.co
 
 ## General usage
 
-To unlock the bootloader you have to set `--mode=UNLOCK` and pass 3 files in arguments:  
-- A FFU file (it will be our first source to get the binaries of the partitions).
+To unlock the bootloader and root the OS you have to give 5 files in arguments:  
+- A FFU file corresponding to the partitions currently installed in the phone (it will be our first source to get the binaries of the partitions).
 - An image file of an engineering SBL3 (the "engineering" version contains the codes required to boot in "Mass Storage" mode).
 - A .hex file containing a programmer (we will use it to flash unsigned images of some partitions).
+- A _donor_ FFU file from which we a going to copy the mobilestartup.efi file.
+- A special version of the partition UEFI_BS_NV.
+
+> [!NOTE]
+> The special version of the partition UEFI_BS_NV is available at the root of this GitHub repository (this is the uncompressed version of the one supplied with [WPInternals](https://github.com/ReneLergner/WPinternals) for family A phones).   
+
+> [!WARN]
+> The program must be run as an Administrator (in order to get SeRestorePrivilege for example).
 
 ![](wpi01.png)
 
 ![](wpi02.png)
-
-To root the OS you have to set `--mode=ROOT`. No other argument is required with this mode but the program must be run as an Administrator (in order to get SeRestorePrivilege).  
-You can also chain the unlock of the bootloader and the root of the OS by using `--mode=UNLOCK_AND_ROOT`. 
 
 The optional parameter `--verbose` activates the display of some insights (for example the list of partitions of the GPT) but also all the data exchanged between the host computer and the phone (including the content of the flashed partitions). If you activate this option I advise to redirect the output into a file (**more than 35GB are logged when you unlock a phone !**).
 
@@ -95,7 +100,16 @@ The big picture of the unlock procedure is the following:
 2. Start the official programmer and use it to flash a modified version of the SBL2, SBL3 and UEFI partitions (these modified versions don't check the integrity of the programs they execute, unlike their official versions).
 3. Allow the execution of the modified SBL2 partition by adding an additional partition named "HACK" into the last sector of the partition SBL1. Currently, I don't know how this HACK partition bypasses the integrity check done by SBL1.
 
+> [!NOTE]
+> This programm is based on the version 2.9 of [WPInternals](https://github.com/ReneLergner/WPinternals).  
+> Starting from this version it's possible to activate _testsigning_ in BCD (to load non officially signed kernel drivers for example).  
+> This is possible because the phone is put in a kind of developper mode (a string "Not For Resale" is visible at the bottom of the Windows Phone boot screen).
 
 
+## Compilation
 
+This program can be compiled with Visual Studio 2015.  
+
+> [!NOTE]
+> The build is for x64 in order to be able to execute internally the BCDEDIT command.  
 

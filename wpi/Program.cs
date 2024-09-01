@@ -35,41 +35,41 @@ namespace wpi
             // And check their validity
             ////////////////////////////////////////////////////////////////////////////
             string ffuPath = getStringParameter("ffu", args); // FFU file (.ffu) compatible with the phone.
-            string donorFfuPath = getStringParameter("donorFfu", args); // FFU file (.ffu) containing a patchable version of mobilestartup.efi
-            string engeeniringSBL3Path = getStringParameter("bin", args); // Raw image of an engeeniring SBL3 file (.bin) compatible with the phone. Not needed in REPAIR mode.
+            string donorFfuPath = getStringParameter("donorFfu", args); // FFU file (.ffu) containing a patchable version of mobilestartup.efi Not needed in REPAIR mode.
+            string engeeniringSBL3Path = getStringParameter("sbl3Bin", args); // Raw image of an engeeniring SBL3 file (.bin) compatible with the phone. Not needed in REPAIR mode.
+            string unlockedUefiBsNvPath = getStringParameter("uefiBsNvBin", args); // Raw image of an UEFI_BS_NV file (.bin) patched to deactivate Secure Boot. Not needed in REPAIR mode.
             string programmerPath = getStringParameter("hex", args); // Programmer file (.hex) compatible with the phone.
-            string mode = getStringParameter("mode", args); // REPAIR = partially repair phone in EDL mode. After repair the phone should be able to boot in "flash" mode. And you can use WPInternals to flash a ffu file.
             verbose = getBoolParameter("verbose", args);  // optional.
 
-            if (!"REPAIR".Equals(mode) && !"UNLOCK".Equals(mode) && !"ROOT".Equals(mode) && !"UNLOCK_AND_ROOT".Equals(mode))
-            {
-                Console.WriteLine("Unkown \"mode={0}\". Only UNLOCK, REPAIR, ROOT and UNLOCK_AND_ROOT are supported.", mode);
-                printUsage();
-                ProgramExit(-1);
-            }
-
-            if (("UNLOCK".Equals(mode) || "REPAIR".Equals(mode) || "UNLOCK_AND_ROOT".Equals(mode)) && (ffuPath == null || !File.Exists(ffuPath)))
+            if (ffuPath == null || !File.Exists(ffuPath))
             {
                 Console.WriteLine("FFU file not found.");
                 printUsage();
                 ProgramExit(-1);
             }
 
-            if (("UNLOCK".Equals(mode) || "UNLOCK_AND_ROOT".Equals(mode)) && (donorFfuPath == null || !File.Exists(donorFfuPath)))
+            if (donorFfuPath == null || !File.Exists(donorFfuPath))
             {
                 Console.WriteLine("Donor FFU file not found.");
                 printUsage();
                 ProgramExit(-1);
             }
 
-            if (("UNLOCK".Equals(mode) || "UNLOCK_AND_ROOT".Equals(mode)) && (engeeniringSBL3Path == null || !File.Exists(engeeniringSBL3Path)))
+            if (engeeniringSBL3Path == null || !File.Exists(engeeniringSBL3Path))
             {
                 Console.WriteLine("Raw image of an engeeniring SBL3 no found.");
                 printUsage();
                 ProgramExit(-1);
             }
 
-            if (("UNLOCK".Equals(mode) || "REPAIR".Equals(mode) || "UNLOCK_AND_ROOT".Equals(mode)) && (programmerPath == null || !File.Exists(programmerPath)))
+            if (unlockedUefiBsNvPath == null || !File.Exists(unlockedUefiBsNvPath))
+            {
+                Console.WriteLine("Raw image of an unlocked UEFI_BS_NV no found.");
+                printUsage();
+                ProgramExit(-1);
+            }
+
+            if (programmerPath == null || !File.Exists(programmerPath))
             {
                 Console.WriteLine("Emergency programmer no found.");
                 printUsage();
@@ -78,10 +78,6 @@ namespace wpi
 
             uint bytesRead;
             byte[] Buffer;
-            if ("ROOT".Equals(mode))
-            {
-                goto root_phone;
-            }
 
             // Check the validity of the FFU file
             if (!FFU.checkFile(ffuPath))
@@ -90,23 +86,9 @@ namespace wpi
             }
             FFU ffu = new FFU(ffuPath);
 
-            ////////////////////////////////////////////////////////////////////////////
-            Console.Write("\nPrepare a patched version of the EFIESP partition");
-            // We need a patched mobilestartup.efi from Windows 10 (I don't know why).
-            // We get it from a "donor FFU".
-            // In our case the donor FFU is:
-            //   RM1085_1078.0053.10586.13169.13829.034EA6_retail_prod_signed.ffu
-            //   OS version 10.0.10586.318
-            FFU donorFFU = new FFU(donorFfuPath);
-            byte[] EFIESPcontent = ffu.GetPartition("EFIESP");
-            // Overwrite the file mobilestartup.efi of the EFIESP partition with the one coming from the donor FFU.
-            // Then patch this file.
-            EFIESP efiEsp = new EFIESP(EFIESPcontent);
-            ////////////////////////////////////////////////////////////////////////////
-
             // Get Root Hash Key (RHK) contained in SBL1 for later check (must be the same as the one of the phone).
             byte[] sbl1Content = ffu.GetPartition("SBL1");
-            Console.WriteLine("Parse SBL1...");
+            Console.WriteLine("Parse FFU SBL1...");
             byte[] ffuRKH = Qualcomm.parseSBL1orProgrammer(sbl1Content, 0x2800); // Offset in case of SBL1 partition.
             if (ffuRKH == null)
             {
@@ -128,7 +110,7 @@ namespace wpi
             for (int i = 0; i < programmer.Length; i++)
             {
                 if (i % 1000 == 0) Console.Write("."); // Progress bar
-                if (programmer.Skip(i).Take(programmerType.Length).SequenceEqual(programmerType))
+                //if (programmer.Skip(i).Take(programmerType.Length).SequenceEqual(programmerType))
                 {
                     patternPosition = i;
                     break;
@@ -158,26 +140,22 @@ namespace wpi
             byte[] engeeniringSbl3Content = null;
             Partition uefiPartition = null;
             UEFI uefiContent = null;
-            if ("REPAIR".Equals(mode))
-            {
-                ////////////////////////////////////////////////////////////////////////////
-                // Start the REPAIR mode 
-                // we got directly to the part where communicate with the phone in Emergency DownLoad (EDL) mode
-                ////////////////////////////////////////////////////////////////////////////
-                gptContent = new GPT(ffu.GetSectors(0x01, 0x22), 0x4200);
-                sbl1Partition = ffu.gpt.GetPartition("SBL1");
-                sbl2Partition = ffu.gpt.GetPartition("SBL2");
-                uefiPartition = ffu.gpt.GetPartition("UEFI");
-                uefiContent = new UEFI(ffu.GetPartition("UEFI"), false);
-                goto repair_bricked_phone;
-            }
+            byte[] mobilestartupefiContent = null;
+            byte[] uefiBsNvContent = null;
 
             ////////////////////////////////////////////////////////////////////////////
-            // Start the UNLOCK mode 
+            // Start the unlock 
             // and prepare the content of the partitions we will flash later into the phone
             ////////////////////////////////////////////////////////////////////////////
 
-
+            // Must be run as Administrator to be able to patch the files of the EFIESP and MainOS partitions.
+            WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            WindowsPrincipal principal = new WindowsPrincipal(identity);
+            if (!principal.IsInRole(WindowsBuiltInRole.Administrator))
+            {
+                Console.WriteLine("This program must be run as Administrator for \"ROOT\" mode.");
+                ProgramExit(-1);
+            }
 
             // Prepare a patched SBL2 that will be flashed into the phone
             // Replace 0x28, 0x00, 0xD0, 0xE5 : ldrb r0, [r0, #0x28]
@@ -218,7 +196,7 @@ namespace wpi
             if (engeeniringSbl3Content.Length > ffu.GetPartition("SBL3").Length)
             {
                 Console.WriteLine("The engeeniring SBL3 is too large ({0} bytes instead of {1} bytes).", engeeniringSbl3Content.Length, ffu.GetPartition("SBL3").Length);
-                ProgramExit(-5);
+                ProgramExit(-1);
             }
 
             Console.Write("\nPrepare a patched version of the engeeniring SBL3 partition");
@@ -245,13 +223,58 @@ namespace wpi
             }
             System.Buffer.BlockCopy(new byte[] { 0x00, 0x00, 0xA0, 0xE3 }, 0, engeeniringSbl3Content, patternPosition + 4, 4);
 
-            Console.WriteLine("\nRead the UEFI partition.");
+            if (verbose) Console.WriteLine("\nRead the UEFI partition.");
             uefiContent = new UEFI(ffu.GetPartition("UEFI"), true);
-            Console.Write("Prepare a patched version of the UEFI partition.");
+            Console.Write("\nPrepare a patched version of the UEFI partition.");
             uefiContent.Patch();
 
+            Console.WriteLine("\nPrepare a patched version of mobilestartup.efi");
+            // We need a patched mobilestartup.efi from Windows 10 (I don't know why).
+            // We get it from a "donor FFU".
+            // In our case the donor FFU is:
+            //   RM1085_1078.0053.10586.13169.13829.034EA6_retail_prod_signed.ffu
+            //   OS version 10.0.10586.318
+            FFU donorFFU = new FFU(donorFfuPath);
+            byte[] EFIESPcontent = donorFFU.GetPartition("EFIESP");
+            EFIESP efiEsp = new EFIESP(EFIESPcontent);
+            mobilestartupefiContent = efiEsp.getFileContent();
+            // Check hash of the file
+            SHA1Managed sha = new SHA1Managed();
+            byte[] hash = sha.ComputeHash(mobilestartupefiContent);
+            if (verbose)
+            {
+                Console.Write("\nHash of mobilestartup.efi before patch: ");
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    Console.Write("{0:X2}", hash[i]);
+                }
+                Console.WriteLine("");
+            }
+            if (!hash.SequenceEqual(new byte[] { 0x8E, 0x71, 0xD1, 0xF0, 0x25, 0x5E, 0x8C, 0x71, 0xBD, 0xE6, 0xF8, 0xD3, 0x78, 0x0C, 0x48, 0x27, 0xC2, 0x44, 0x37, 0x5B }))
+            {
+                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 10.0.10586.318 is supported.");
+                ProgramExit(-1);
+            }
+            // Patch the content of the file
+            System.Buffer.BlockCopy(new byte[] { 0x00, 0x20, 0x70, 0x47, 0x78, 0x46, 0x25, 0x49, 0xA0, 0xEB, 0x01, 0x00, 0x70, 0xB4, 0x81, 0xB0, 0x04, 0x46, 0x23, 0x4B, 0x04, 0xEB, 0x03, 0x00, 0x22, 0x4B, 0x04, 0xEB, 0x03, 0x01, 0x03, 0x22, 0x00, 0x23, 0x00, 0x93, 0x43, 0xF2, 0x2D, 0x56, 0x04, 0xEB, 0x06, 0x05, 0xA8, 0x47, 0x1E, 0x49, 0x04, 0xEB, 0x01, 0x05, 0xA8, 0x47, 0x06, 0x46, 0x01, 0x2E, 0x04, 0xD0, 0x01, 0x20, 0x1B, 0x49, 0x04, 0xEB, 0x01, 0x05, 0xA8, 0x47, 0x1A, 0x48, 0x04, 0xEB, 0x00, 0x01, 0x09, 0x68, 0xD1, 0xF8, 0xAC, 0x50, 0x0E, 0xA0, 0x00, 0x21, 0x6A, 0x46, 0xA8, 0x47, 0x00, 0x9D, 0x6D, 0x68, 0x00, 0x2D, 0x01, 0xD1, 0x00, 0x9D, 0xAD, 0x68, 0xA8, 0x47, 0x01, 0x2E, 0x04, 0xD0, 0x30, 0x46, 0x0F, 0x49, 0x04, 0xEB, 0x01, 0x05, 0xA8, 0x47, 0x0F, 0x4E, 0x04, 0xEB, 0x06, 0x05, 0xA8, 0x47, 0x42, 0xF6, 0xC1, 0x26, 0x04, 0xEB, 0x06, 0x00, 0x01, 0xB0, 0x70, 0xBC, 0x00, 0x47, 0x9D, 0x5B, 0x08, 0xF9, 0x04, 0x93, 0xFB, 0x40, 0x8F, 0xE0, 0x4A, 0xEE, 0x3B, 0x1A, 0x78, 0x4B, 0xB0, 0x8D, 0x06, 0x00, 0x28, 0x12, 0x0B, 0x00, 0x48, 0x12, 0x0B, 0x00, 0xC5, 0x87, 0x07, 0x00, 0x6D, 0x87, 0x07, 0x00, 0xC4, 0xCF, 0x0E, 0x00, 0x41, 0xFF, 0x06, 0x00 }, 0, mobilestartupefiContent, 0x000681A8, 184);
+            System.Buffer.BlockCopy(new byte[] { 0xF8, 0xB8, 0x0C, 0x00 }, 0, mobilestartupefiContent, 0x00000138, 4);
+            System.Buffer.BlockCopy(new byte[] { 0x00, 0x20, 0x70, 0x47 }, 0, mobilestartupefiContent, 0x000710F8, 4);
+            System.Buffer.BlockCopy(new byte[] { 0x00, 0x20, 0x70, 0x47 }, 0, mobilestartupefiContent, 0x00028A2C, 4);
+            System.Buffer.BlockCopy(new byte[] { 0x48, 0x00, 0x65, 0x00, 0x61, 0x00, 0x74, 0x00, 0x68, 0x00, 0x63, 0x00, 0x6C, 0x00, 0x69, 0x00, 0x66, 0x00, 0x66, 0x00, 0x37, 0x00, 0x34, 0x00, 0x4D, 0x00, 0x53, 0x00, 0x4D, 0x00, 0x00, 0x00 }, 0, mobilestartupefiContent, 0x000AF828, 32);
+            System.Buffer.BlockCopy(new byte[] { 0x00, 0xBF }, 0, mobilestartupefiContent, 0x00001EB6, 2);
+            System.Buffer.BlockCopy(new byte[] { 0x66, 0xF0, 0x76, 0xB9 }, 0, mobilestartupefiContent, 0x00001EBC, 4);
+
+            // Read the content of the unlocked UEFI_BS_NV partition file
+            // As indicated in WPinternals:
+            // In this partition the SecureBoot variable is disabled.
+            // It overwrites the variable in a different NV-partition than where this variable is stored usually.
+            // This normally leads to endless-loops when the NV-variables are enumerated.
+            // But the partition contains an extra hack to break out the endless loops.
+            uefiBsNvContent = File.ReadAllBytes(unlockedUefiBsNvPath);
+            List<string> devicePaths = null;
+            string devicePath = null;
+
             ////////////////////////////////////////////////////////////////////////////
-            // UNLOCK mode 
             // Reboot in flash mode to read some important information from the phone:
             // - mainly the Root Hash Key (RKH) to check its compatibility with the FFU and the programmer files
             ////////////////////////////////////////////////////////////////////////////
@@ -261,8 +284,7 @@ namespace wpi
             // - known as "New Combi" interface in WPInternals
             // This interface allows to send jsonRPC (Remote Procedure Call) (to reboot the phone in flash mode for example).
             // Only a phone in "normal" mode exposes this interface. 
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Apollo\" device interface ( = \"normal\" mode )");
-            List<string> devicePaths;
+            Console.Write("\nLook for a phone exposing \"Apollo\" device interface ( = \"normal\" mode )");
             do
             {
                 Thread.Sleep(1000);
@@ -275,7 +297,7 @@ namespace wpi
                 Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
                 ProgramExit(-1);
             }
-            string devicePath = devicePaths[0];
+            devicePath = devicePaths[0];
             if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
 
             if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_NORMAL_MODE, StringComparison.OrdinalIgnoreCase) == -1)
@@ -312,8 +334,8 @@ namespace wpi
             // this interface is also exposed when the phone is in "normal" mode.
             // But in "normal" mode the PID of the device is 0x0661
             // Whereas in "flash" or "bootloader" mode the PID of the device is 0x066E
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface.");
-            for (int i = 0; i < 30; i++) // Wait 30s max
+            Console.Write("\nLook for a phone exposing \"Care Connectivity\" device interface.");
+            for (int i = 0; i < 120; i++) // Wait 120s max
             {
                 Thread.Sleep(1000);
                 Console.Write(".");
@@ -386,7 +408,6 @@ namespace wpi
             }
 
             ////////////////////////////////////////////////////////////////////////////
-            // UNLOCK mode 
             // Reboot in bootloader mode to read the content of GUIG Partition Table (GPT) of the phone
             ////////////////////////////////////////////////////////////////////////////
 
@@ -399,7 +420,7 @@ namespace wpi
             CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface.");
+            Console.Write("\nLook for a phone exposing \"Care Connectivity\" device interface.");
             do
             {
                 Thread.Sleep(1000);
@@ -484,7 +505,6 @@ namespace wpi
             uefiPartition = gptContent.GetPartition("UEFI");
 
             ////////////////////////////////////////////////////////////////////////////
-            // UNLOCK mode 
             // Prepare the modified GPT
             ////////////////////////////////////////////////////////////////////////////
 
@@ -504,11 +524,10 @@ namespace wpi
             sbl2Partition.partitionTypeGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
             sbl2Partition.partitionGuid = new Guid(new byte[] { 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74, 0x74 });
 
-            Console.WriteLine("\nRebuild the GPT...");
+            if (verbose) Console.WriteLine("\nRebuild the GPT...");
             gptContent.Rebuild();
 
             ////////////////////////////////////////////////////////////////////////////
-            // UNLOCK mode 
             // Reboot in flash mode to "brick" the phone
             // This is the easiest way to reach our goal: have a phone in Emergency DownLoad (EDL) mode.
             ////////////////////////////////////////////////////////////////////////////
@@ -520,7 +539,7 @@ namespace wpi
             CareConnectivityDeviceInterface.WritePipe(RebootToFlashCommand, RebootToFlashCommand.Length);
             CareConnectivityDeviceInterface.Close();
 
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface");
+            Console.Write("\nLook for a phone exposing \"Care Connectivity\" device interface");
             do
             {
                 Thread.Sleep(1000);
@@ -631,7 +650,6 @@ namespace wpi
             }
 
             ////////////////////////////////////////////////////////////////////////////
-            // UNLOCK mode 
             // Reboot the phone.
             // As we destroyed the GPT, the phone will go in EDL mode.
             ////////////////////////////////////////////////////////////////////////////
@@ -643,14 +661,12 @@ namespace wpi
             CareConnectivityDeviceInterface.Close();
 
             ////////////////////////////////////////////////////////////////////////////
-            // UNLOCK/REPAIR mode 
             // Upload and start the programmer
             ////////////////////////////////////////////////////////////////////////////
 
-        repair_bricked_phone:
             Buffer = new byte[0x8000];
 
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Lumia Emergency\" device interface");
+            Console.Write("\nLook for a phone exposing \"Lumia Emergency\" device interface");
             do
             {
                 Thread.Sleep(1000);
@@ -708,7 +724,7 @@ namespace wpi
             }
             EmergencyDeviceInterface.Close(); // The successful loading of the programmer causes a disconnection of the phone
 
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Lumia Emergency\" device interface");
+            Console.Write("\nLook for a phone exposing \"Lumia Emergency\" device interface");
             do
             {
                 Thread.Sleep(1000);
@@ -732,7 +748,6 @@ namespace wpi
             EmergencyDeviceInterface = new USB(devicePath);
 
             ////////////////////////////////////////////////////////////////////////////
-            // UNLOCK/REPAIR mode 
             // Use the programmer to flash the following partitions:
             // MBR, GPT, SBL1, (HACK in UNLOCK mode only), SBL2, SBL3, TZ, RPM, UEFI, WINSECAPP
             ////////////////////////////////////////////////////////////////////////////
@@ -782,45 +797,34 @@ namespace wpi
                 ProgramExit(-1);
             }
 
-            if ("UNLOCK".Equals(mode))
-            {
-                Console.WriteLine("\nFlash the HACK partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", hackPartition.firstSector, hackContent.Length);
-                Qualcomm.Flash((uint)hackPartition.firstSector * 512, hackContent, (uint)hackContent.Length, EmergencyDeviceInterface);
-            }
+            Console.WriteLine("\nFlash the HACK partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", hackPartition.firstSector, hackContent.Length);
+            Qualcomm.Flash((uint)hackPartition.firstSector * 512, hackContent, (uint)hackContent.Length, EmergencyDeviceInterface);
 
             // To minimize risk of brick we also flash unmodified partitions (MBR, SBL1, TZ, RPM, WINSECAPP)
             // Note: SBL1 is not really modified, just truncated by the HACK partition.
             byte[] ffuMBR = ffu.GetSectors(0, 1);
-            Console.WriteLine("\nFlash the MBR partition (sector 0x0 ,size 0x{0:X} bytes)...", ffuMBR.Length);
+            Console.WriteLine("\nFlash the MBR partition (start sector 0x0, size 0x{0:X} bytes)...", ffuMBR.Length);
             Qualcomm.Flash(0, ffuMBR, (uint)ffuMBR.Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the GPT partition (sector 0x1 ,size 0x{0:X} bytes)...", gptContent.GPTBuffer.Length);
+            Console.WriteLine("\nFlash the GPT partition (start sector 0x1, size 0x{0:X} bytes)...", gptContent.GPTBuffer.Length);
             Qualcomm.Flash(0x200, gptContent.GPTBuffer, 0x41FF, EmergencyDeviceInterface); // Bad bounds-check in the flash-loader prohibits to write the last byte.
 
-            Console.WriteLine("\nFlash the SBL2 partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", sbl2Partition.firstSector * 512, sbl2Content.Length);
+            Console.WriteLine("\nFlash the SBL2 partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", sbl2Partition.firstSector, sbl2Content.Length);
             Qualcomm.Flash((uint)sbl2Partition.firstSector * 512, sbl2Content, (uint)sbl2Content.Length, EmergencyDeviceInterface);
 
-            if ("UNLOCK".Equals(mode))
-            {
-                Console.WriteLine("\nFlash the engeeniring SBL3 partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", gptContent.GetPartition("SBL3").firstSector * 512, engeeniringSbl3Content.Length);
-                Qualcomm.Flash((uint)gptContent.GetPartition("SBL3").firstSector * 512, engeeniringSbl3Content, (uint)engeeniringSbl3Content.Length, EmergencyDeviceInterface);
-            }
-            else
-            {
-                Console.WriteLine("\nFlash the SBL3 partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", ffu.gpt.GetPartition("SBL3").firstSector * 512, ffu.GetPartition("SBL3").Length);
-                Qualcomm.Flash((uint)ffu.gpt.GetPartition("SBL3").firstSector * 512, ffu.GetPartition("SBL3"), (uint)ffu.GetPartition("SBL3").Length, EmergencyDeviceInterface);
-            }
+            Console.WriteLine("\nFlash the engeeniring SBL3 partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", gptContent.GetPartition("SBL3").firstSector, engeeniringSbl3Content.Length);
+            Qualcomm.Flash((uint)gptContent.GetPartition("SBL3").firstSector * 512, engeeniringSbl3Content, (uint)engeeniringSbl3Content.Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the UEFI partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", uefiPartition.firstSector * 512, uefiContent.Binary.Length);
+            Console.WriteLine("\nFlash the UEFI partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", uefiPartition.firstSector, uefiContent.Binary.Length);
             Qualcomm.Flash((uint)uefiPartition.firstSector * 512, uefiContent.Binary, (uint)uefiContent.Binary.Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the SBL1 partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", sbl1Partition.firstSector * 512, (sbl1Partition.lastSector - sbl1Partition.firstSector + 1) * 512); // Don't use the size of the array of bytes because in UNLOCK mode the last sector of the partition SBL1 is removed
+            Console.WriteLine("\nFlash the SBL1 partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", sbl1Partition.firstSector, (sbl1Partition.lastSector - sbl1Partition.firstSector + 1) * 512); // Don't use the size of the array of bytes because in UNLOCK mode the last sector of the partition SBL1 is removed
             Qualcomm.Flash((uint)sbl1Partition.firstSector * 512, sbl1Content, (uint)(sbl1Partition.lastSector - sbl1Partition.firstSector + 1) * 512, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the TZ partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", ffu.gpt.GetPartition("TZ").firstSector * 512, ffu.GetPartition("TZ").Length);
+            Console.WriteLine("\nFlash the TZ partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", ffu.gpt.GetPartition("TZ").firstSector, ffu.GetPartition("TZ").Length);
             Qualcomm.Flash((uint)ffu.gpt.GetPartition("TZ").firstSector * 512, ffu.GetPartition("TZ"), (uint)ffu.GetPartition("TZ").Length, EmergencyDeviceInterface);
 
-            Console.WriteLine("\nFlash the RPM partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", ffu.gpt.GetPartition("RPM").firstSector * 512, ffu.GetPartition("RPM").Length);
+            Console.WriteLine("\nFlash the RPM partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", ffu.gpt.GetPartition("RPM").firstSector, ffu.GetPartition("RPM").Length);
             Qualcomm.Flash((uint)ffu.gpt.GetPartition("RPM").firstSector * 512, ffu.GetPartition("RPM"), (uint)ffu.GetPartition("RPM").Length, EmergencyDeviceInterface);
 
             // Workaround for bad bounds-check in flash-loader
@@ -830,7 +834,7 @@ namespace wpi
             if ((WINSECAPPStart + WINSECAPPLength) > 0x1E7FE00)
                 WINSECAPPLength = 0x1E7FE00 - WINSECAPPStart;
 
-            Console.WriteLine("\nFlash the WINSECAPP partition (sector 0x{0:X} ,size 0x{1:X} bytes)...", ffu.gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP").Length);
+            Console.WriteLine("\nFlash the WINSECAPP partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", ffu.gpt.GetPartition("WINSECAPP").firstSector, ffu.GetPartition("WINSECAPP").Length);
             Qualcomm.Flash((uint)ffu.gpt.GetPartition("WINSECAPP").firstSector * 512, ffu.GetPartition("WINSECAPP"), WINSECAPPLength, EmergencyDeviceInterface);
 
             Console.WriteLine("\nClose partition ..."); //Close and flush last partial write to flash
@@ -845,9 +849,8 @@ namespace wpi
             }
 
             ////////////////////////////////////////////////////////////////////////////
-            // UNLOCK/REPAIR mode 
             // Reboot the phone
-            // In UNLOCK mode, it will reboot in flash mode because we previously interrupt a flash session to brick the phone
+            // It will reboot in flash mode because we previously interrupt a flash session to brick the phone
             ////////////////////////////////////////////////////////////////////////////
 
             Console.WriteLine("\nReboot the phone...");
@@ -863,17 +866,10 @@ namespace wpi
 
             EmergencyDeviceInterface.Close();
 
-            if ("REPAIR".Equals(mode))
-            {
-                // No need to go further in repair mode
-                // We should be able to use another tool (like WPInternals) to finish the repair
-                ProgramExit(0);
-            }
-
             Console.WriteLine("\nAfter reboot, the phone should be in \"flash\" mode \"in-progress\" : A big \"NOKIA\" in the top part of the screen on a dark red background.\n");
             // This is because we previously interrupt a flash session to brick the phone...
 
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface");
+            Console.Write("\nLook for a phone exposing \"Care Connectivity\" device interface");
             do
             {
                 Thread.Sleep(1000);
@@ -898,16 +894,9 @@ namespace wpi
             // Open the interface
             CareConnectivityDeviceInterface = new USB(devicePath);
 
-            // Unlock UEFI
-            // Remove secure boot at the UEFI level
-            // Allow setting of 'testsigning' for example.
-
-
-
 
             ////////////////////////////////////////////////////////////////////////////
-            // UNLOCK mode 
-            // Finish the flash session to reboot in normal mode
+            // Flash the UEFI_BS_NV to unlock the UEFI
             ////////////////////////////////////////////////////////////////////////////
 
             Console.WriteLine("\nRead secure flash status...");
@@ -920,139 +909,89 @@ namespace wpi
                 ProgramExit(-1);
             }
 
-            // Flash dummy sector (only allowed when phone is authenticated)
-            Console.WriteLine("\nFlash an empty sector to exit the \"flash\" mode...");
-            byte[] flashCommand = new byte[576]; // command header (64 bytes) + empty sector (512 bytes)
+
+            // Get info of current partition UEFI_BS_NV
+            Partition partitionCurrentUefiBsNv = gptContent.GetPartition("UEFI_BS_NV");
+
+            // Create new patched partition UEFI_BS_NV
+            // We mustn't touch the current partition to avoid a boot loop (with gears).
+            Partition partitionNewUefiBsNv = new Partition();
+            partitionNewUefiBsNv.name = "UEFI_BS_NV";
+            partitionNewUefiBsNv.attributes = partitionCurrentUefiBsNv.attributes;
+            partitionNewUefiBsNv.firstSector = partitionCurrentUefiBsNv.lastSector + 1;
+            partitionNewUefiBsNv.lastSector = partitionNewUefiBsNv.firstSector + (partitionCurrentUefiBsNv.lastSector - partitionCurrentUefiBsNv.firstSector);
+            partitionNewUefiBsNv.partitionTypeGuid = partitionCurrentUefiBsNv.partitionTypeGuid;
+            partitionNewUefiBsNv.partitionGuid = partitionCurrentUefiBsNv.partitionGuid;
+            gptContent.partitions.Add(partitionNewUefiBsNv);
+
+            // Transform current partition UEFI_BS_NV into BACKUP_BS_NV
+            partitionCurrentUefiBsNv.name = "BACKUP_BS_NV";
+            partitionCurrentUefiBsNv.partitionTypeGuid = Guid.NewGuid();
+            partitionCurrentUefiBsNv.partitionGuid = Guid.NewGuid();
+
+            if (verbose) Console.WriteLine("\nRebuild the GPT...");
+            gptContent.Rebuild();
+
+            Console.WriteLine("\nFlash the UEFI_BS_NV partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", partitionNewUefiBsNv.firstSector, uefiBsNvContent.Length);
+            byte[] flashCommand = new byte[262208]; // command header (64 bytes) + partition  (262144 bytes)
             // We use the normal command NOKF instead of the UFP extended command NOKXFS
             flashCommand[0] = 0x4E; // N
             flashCommand[1] = 0x4F; // O
             flashCommand[2] = 0x4B; // K
             flashCommand[3] = 0x46; // F
             flashCommand[5] = 0x00; // Device type = 0
-            flashCommand[11] = 0x00; // Start sector is just after the last sector of the GPT (0x22)
-            flashCommand[12] = 0x00;
-            flashCommand[13] = 0x00;
-            flashCommand[14] = 0x22;
-            flashCommand[15] = 0x00; // Sector count = 1
+            flashCommand[11] = (byte)((partitionNewUefiBsNv.firstSector >> 24) & 0xFF); // Start sector
+            flashCommand[12] = (byte)((partitionNewUefiBsNv.firstSector >> 16) & 0xFF);
+            flashCommand[13] = (byte)((partitionNewUefiBsNv.firstSector >> 8) & 0xFF);
+            flashCommand[14] = (byte)(partitionNewUefiBsNv.firstSector & 0xFF);
+            flashCommand[15] = 0x00; // Sector count = 512 ( = 262144 / 512)
             flashCommand[16] = 0x00;
-            flashCommand[17] = 0x00;
-            flashCommand[18] = 0x01;
+            flashCommand[17] = 0x02;
+            flashCommand[18] = 0x00;
             flashCommand[19] = 0x00; // Progress (0 - 100)
             flashCommand[24] = 0x00; // Do Verify
             flashCommand[25] = 0x00; //  Is Test
-            Array.Clear(flashCommand, 64, 512); // Add the content of the empty sector
+            System.Buffer.BlockCopy(uefiBsNvContent, 0, flashCommand, 64, 262144);
             CareConnectivityDeviceInterface.WritePipe(flashCommand, flashCommand.Length);
+            Buffer = new byte[0x8000];
             CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
-            // todo check return
 
-            Console.WriteLine("\nReboot the phone...");
-            RebootCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x52 }; // NOKR
-            CareConnectivityDeviceInterface.WritePipe(RebootCommand, RebootCommand.Length);
-            CareConnectivityDeviceInterface.Close();
+            Console.WriteLine("\nFlash the GPT partition (start sector 0x{0:X}, size 0x{1:X} bytes)...", 1, gptContent.GPTBuffer.Length);
+            UInt32 gptSectorCount = (uint)gptContent.GPTBuffer.Length / 512;
+            flashCommand = new byte[64 + gptContent.GPTBuffer.Length]; // command header (64 bytes) + partition
+            // We use the normal command NOKF instead of the UFP extended command NOKXFS
+            flashCommand[0] = 0x4E; // N
+            flashCommand[1] = 0x4F; // O
+            flashCommand[2] = 0x4B; // K
+            flashCommand[3] = 0x46; // F
+            flashCommand[5] = 0x00; // Device type = 0
+            flashCommand[11] = 0x00; // Start sector = 1
+            flashCommand[12] = 0x00;
+            flashCommand[13] = 0x00;
+            flashCommand[14] = 0x01;
+            flashCommand[15] = (byte)((gptSectorCount >> 24) & 0xFF); // Sector count
+            flashCommand[16] = (byte)((gptSectorCount >> 16) & 0xFF);
+            flashCommand[17] = (byte)((gptSectorCount >> 8) & 0xFF);
+            flashCommand[18] = (byte)(gptSectorCount & 0xFF);
+            flashCommand[19] = 0x00; // Progress (0 - 100)
+            flashCommand[24] = 0x00; // Do Verify
+            flashCommand[25] = 0x00; //  Is Test
+            System.Buffer.BlockCopy(gptContent.GPTBuffer, 0, flashCommand, 64, gptContent.GPTBuffer.Length);
+            CareConnectivityDeviceInterface.WritePipe(flashCommand, flashCommand.Length);
+            Buffer = new byte[0x8000];
+            CareConnectivityDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
 
-            if (!"UNLOCK_AND_ROOT".Equals(mode))
-            {
-                ProgramExit(0);
-            }
-
-        ////////////////////////////////////////////////////////////////////////////
-        // ROOT mode 
-        // Switch to "mass storage" mode to patch the MainOS and EFIESP partitions
-        ////////////////////////////////////////////////////////////////////////////
-
-        root_phone:
+            ////////////////////////////////////////////////////////////////////////////
+            // Switch to "mass storage" mode to patch the MainOS and EFIESP partitions
+            ////////////////////////////////////////////////////////////////////////////
             bool rootSuccess = false;
-
-            // Must be run as Administrator to be able to patch the files of the EFIESP and MainOS partitions.
-            WindowsIdentity identity = WindowsIdentity.GetCurrent();
-            WindowsPrincipal principal = new WindowsPrincipal(identity);
-            if (!principal.IsInRole(WindowsBuiltInRole.Administrator))
-            {
-                Console.WriteLine("This program must be run as Administrator for \"ROOT\" mode.");
-                ProgramExit(-1);
-            }
-
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Apollo\" device interface ( = \"normal\" mode )");
-            do
-            {
-                Thread.Sleep(1000);
-                Console.Write(".");
-                devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_APOLLO_DEVICE_INTERFACE));
-            } while (devicePaths.Count == 0);
-            Console.WriteLine();
-            if (devicePaths.Count != 1)
-            {
-                Console.WriteLine("Number of devices found: {0}. Must be one.", devicePaths.Count);
-                ProgramExit(-1);
-            }
-            devicePath = devicePaths[0];
-            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
-
-            if (devicePath.IndexOf(VID_PID_NOKIA_LUMIA_NORMAL_MODE, StringComparison.OrdinalIgnoreCase) == -1)
-            {
-                // Vendor ID 0x0421 : Nokia Corporation
-                // Product ID 0x0661 : Lumia 520 / 620 / 820 / 920 Normal mode
-                Console.WriteLine("Incorrect VID (expecting 0x0421) and/or incorrect PID (expecting 0x0661.)");
-                ProgramExit(-1);
-            }
-
-            Console.WriteLine("\nSwitch to \"flash\" mode...");
-            // Open the interface
-            ApolloDeviceInterface = new USB(devicePath);
-
-            // Send command to reboot in flash mode
-            Request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"SetDeviceMode\",\"params\":{\"DeviceMode\":\"Flash\",\"ResetMethod\":\"HwReset\",\"MessageVersion\":0}}";
-            OutBuffer = System.Text.Encoding.ASCII.GetBytes(Request);
-            ApolloDeviceInterface.WritePipe(OutBuffer, OutBuffer.Length);
-            Buffer = new byte[64]; // Should be enough to read the reboot response
-            ApolloDeviceInterface.ReadPipe(Buffer, Buffer.Length, out bytesRead);
-            ApolloDeviceInterface.Close();
-
-            // Look for a phone connected on a USB port and exposing interface
-            // - known as "Care Connectivity" device interface in WindowsDeviceRecoveryTool / NokiaCareSuite
-            // - known as "Old Combi" interface in WPInternals
-            // This interface allows flash commands starting with the signature "NOK" (to reboot the phone for example).
-            // Notes: 
-            // this interface is also exposed when the phone is in "normal" mode.
-            // But in "normal" mode the PID of the device is 0x0661
-            // Whereas in "flash" or "bootloader" mode the PID of the device is 0x066E
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Care Connectivity\" device interface.");
-            for (int i = 0; i < 30; i++) // Wait 30s max
-            {
-                Thread.Sleep(1000);
-                Console.Write(".");
-                devicePaths = USB.FindDevicePathsFromGuid(new Guid(GUID_NOKIA_CARE_CONNECTIVITY_DEVICE_INTERFACE));
-                if (devicePaths.Count > 0)
-                {
-                    for (int j = 0; j < devicePaths.Count; j++)
-                    {
-                        if (devicePaths[j].IndexOf(VID_PID_NOKIA_LUMIA_UEFI_MODE, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            devicePath = devicePaths[j];
-                            goto flash_found2;
-                        }
-                    }
-                }
-            } while (devicePaths.Count == 0);
-        flash_found2:
-            Console.WriteLine();
-            if (devicePath == null)
-            {
-                Console.WriteLine("Unable to find a phone exposing a \"Care Connectivity\" device interface.");
-                ProgramExit(-1);
-            }
-            devicePath = devicePaths[0];
-            if (verbose) Console.WriteLine("Path of the device found:\n{0}", devicePath);
-
-            // Open the interface
-            CareConnectivityDeviceInterface = new USB(devicePath);
 
             Console.WriteLine("\nSwitch to \"mass storage\" mode...");
             byte[] MassStorageCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x4D }; // NOKM = Mass Storage
             CareConnectivityDeviceInterface.WritePipe(MassStorageCommand, MassStorageCommand.Length);
             // The phone immediatly switches to "mass storage" and doesn't send a response.
 
-            Console.Write("\nLook for a phone connected on a USB port and exposing \"Mass Storage\" device interface.");
+            Console.Write("\nLook for a phone exposing \"Mass Storage\" device interface.");
             devicePath = null;
             for (int i=0; i<15; i++) // Wait 15s max
             {
@@ -1103,6 +1042,7 @@ namespace wpi
                 }
             }
         drive_found:
+            Console.WriteLine("");
             if (Drive == null)
             {
                 Console.WriteLine("Unable to find the drive letter of the mass storage.");
@@ -1117,46 +1057,18 @@ namespace wpi
             string MainOSPath = Drive + @"\";
 
             ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
             // Check hash of files
             ////////////////////////////////////////////////////////////////////////////
 
             // Check hash of the file
-            string filePath = EFIESPPath + @"efi\boot\bootarm.efi";
-            FileStream stream = File.OpenRead(filePath);
-            SHA1Managed sha = new SHA1Managed();
-            byte[] hash = sha.ComputeHash(stream);
-            stream.Close();
-            if (verbose)
-            {
-                Console.Write("\nHash of {0} before patch: ", filePath);
-                for (int i = 0; i < hash.Length; i++)
-                {
-                    Console.Write("{0:X2}", hash[i]);
-                }
-                Console.WriteLine("");
-            }
-            if (hash.SequenceEqual(new byte[] { 0x02, 0x62, 0xE3, 0x06, 0x4B, 0xA0, 0xD2, 0xB2, 0x72, 0x9B, 0x34, 0x76, 0x16, 0xF0, 0x07, 0xC1, 0x35, 0x7A, 0xA8, 0x41 }))
-            {
-                Console.WriteLine("Files are already patched.\nReboot in normal mode...");
-                goto exit_mass_storage;
-            }
-            if (!hash.SequenceEqual(new byte[] { 0x50, 0x16, 0x52, 0xBB, 0xAB, 0x34, 0xCE, 0x5C, 0xB2, 0x83, 0x23, 0x1D, 0x77, 0xEB, 0xBD, 0xDD, 0x90, 0x86, 0x4F, 0x1D }))
-            //if (!hash.SequenceEqual(new byte[] { 0x02, 0x62, 0xE3, 0x06, 0x4B, 0xA0, 0xD2, 0xB2, 0x72, 0x9B, 0x34, 0x76, 0x16, 0xF0, 0x07, 0xC1, 0x35, 0x7A, 0xA8, 0x41 }))
-            {
-                Console.WriteLine("The hash of the file doesn't match the expected hash. Only version 8.10.14234.375 is supported.\nReboot in normal mode...");
-                goto exit_mass_storage;
-            }
-
-            // Check hash of the file
-            filePath = EFIESPPath + @"Windows\System32\boot\mobilestartup.efi";
-            stream = File.OpenRead(filePath);
+            string filePath2 = EFIESPPath + @"Windows\System32\boot\mobilestartup.efi";
+            FileStream stream2 = File.OpenRead(filePath2);
             sha = new SHA1Managed();
-            hash = sha.ComputeHash(stream);
-            stream.Close();
+            hash = sha.ComputeHash(stream2);
+            stream2.Close();
             if (verbose)
             {
-                Console.Write("\nHash of {0} before patch: ", filePath);
+                Console.Write("\nHash of {0} before patch: ", filePath2);
                 for (int i = 0; i < hash.Length; i++)
                 {
                     Console.Write("{0:X2}", hash[i]);
@@ -1171,8 +1083,8 @@ namespace wpi
             }
 
             // Check hash of the file
-            filePath = MainOSPath + @"Windows\System32\SecRuntime.dll";
-            stream = File.OpenRead(filePath);
+            string filePath = MainOSPath + @"Windows\System32\SecRuntime.dll";
+            FileStream stream = File.OpenRead(filePath);
             sha = new SHA1Managed();
             hash = sha.ComputeHash(stream);
             stream.Close();
@@ -1368,12 +1280,34 @@ namespace wpi
                 goto exit_mass_storage;
             }
 
+            //////////////////////////////////////////////////////////////////////////////
+            //// Replace EFIESP mobilestartup.efi with the patched version
+            //////////////////////////////////////////////////////////////////////////////
+
+            filePath = EFIESPPath + @"Windows\System32\boot\mobilestartup.efi";
+            Console.WriteLine("Replace {0}", filePath);
+
+            // Enable Take Ownership AND Restore ownership to original owner
+            // Take Ownership Privilge is not enough.
+            // We need Restore Privilege.
+            Privilege restorePrivilege2 = new Privilege(Privilege.Restore);
+            restorePrivilege2.Enable();
+            FileSecurity originalACL2 = Privilege.prepareFileModification(filePath);
+
+            // Replace file content (new content is bigger than previous content)
+            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
+            stream.Position = 0x00000000;
+            stream.Write(mobilestartupefiContent, 0, mobilestartupefiContent.Length);
+            stream.Close();
+
+            Privilege.finishFileModification(filePath, originalACL2, restorePrivilege2);
+
             ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
-            // Patch EFIESP bootarm.efi
+            // Patch MainOS SecRuntime.dll
             ////////////////////////////////////////////////////////////////////////////
 
-            filePath = EFIESPPath + @"efi\boot\bootarm.efi";
+            filePath = MainOSPath + @"Windows\System32\SecRuntime.dll";
+            Console.WriteLine("Patch {0}", filePath);
 
             // Enable Take Ownership AND Restore ownership to original owner
             // Take Ownership Privilge is not enough.
@@ -1381,54 +1315,6 @@ namespace wpi
             Privilege restorePrivilege = new Privilege(Privilege.Restore);
             restorePrivilege.Enable();
             FileSecurity originalACL = Privilege.prepareFileModification(filePath);
-
-            // Patch file
-            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
-            stream.Position = 0x0003FC20;
-            stream.Write(new byte[] { 0x00,0x20,0x70,0x47 }, 0, 4); // was 0x2D,0xE9,0xF0,0x4F
-            stream.Position = 0x00000148;
-            stream.Write(new byte[] { 0xF0,0xF0,0x0B,0x00 }, 0, 4); // was 0x9E,0xC2,0x0B,0x00
-            stream.Close();
-
-            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
-
-            ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
-            // Patch EFIESP mobilestartup.efi
-            ////////////////////////////////////////////////////////////////////////////
-
-            filePath = EFIESPPath + @"Windows\System32\boot\mobilestartup.efi";
-
-            // Enable Take Ownership AND Restore ownership to original owner
-            // Take Ownership Privilge is not enough.
-            // We need Restore Privilege.
-            restorePrivilege = new Privilege(Privilege.Restore);
-            restorePrivilege.Enable();
-            originalACL = Privilege.prepareFileModification(filePath);
-            
-            // Patch file
-            stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
-            stream.Position = 0x00026BEC;
-            stream.Write(new byte[] { 0x00, 0x20, 0x70, 0x47 }, 0, 4); // was 0x2D,0xE9,0xF0,0x4F
-            stream.Position = 0x00000140;
-            stream.Write(new byte[] { 0x4F, 0x9B, 0x0B, 0x00 }, 0, 4); // was 0xFD,0x6C,0x0B,0x00
-            stream.Close();
-
-            Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
-
-            ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
-            // Patch MainOS SecRuntime.dll
-            ////////////////////////////////////////////////////////////////////////////
-
-            filePath = MainOSPath + @"Windows\System32\SecRuntime.dll";
-
-            // Enable Take Ownership AND Restore ownership to original owner
-            // Take Ownership Privilge is not enough.
-            // We need Restore Privilege.
-            restorePrivilege = new Privilege(Privilege.Restore);
-            restorePrivilege.Enable();
-            originalACL = Privilege.prepareFileModification(filePath);
 
             // Patch file
             stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite);
@@ -1443,11 +1329,11 @@ namespace wpi
             Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
 
             ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
             // Patch MainOS pacmanserver.dll
             ////////////////////////////////////////////////////////////////////////////
 
             filePath = MainOSPath + @"Windows\System32\pacmanserver.dll";
+            Console.WriteLine("Patch {0}", filePath);
 
             // Enable Take Ownership AND Restore ownership to original owner
             // Take Ownership Privilge is not enough.
@@ -1467,11 +1353,11 @@ namespace wpi
             Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
 
             ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
             // Patch MainOS SSPISRV.DLL
             ////////////////////////////////////////////////////////////////////////////
 
             filePath = MainOSPath + @"Windows\System32\SSPISRV.DLL";
+            Console.WriteLine("Patch {0}", filePath);
 
             // Enable Take Ownership AND Restore ownership to original owner
             // Take Ownership Privilge is not enough.
@@ -1491,11 +1377,11 @@ namespace wpi
             Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
 
             ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
             // Patch MainOS MSV1_0.DLL
             ////////////////////////////////////////////////////////////////////////////
 
             filePath = MainOSPath + @"Windows\System32\MSV1_0.DLL";
+            Console.WriteLine("Patch {0}", filePath);
 
             // Enable Take Ownership AND Restore ownership to original owner
             // Take Ownership Privilge is not enough.
@@ -1515,11 +1401,11 @@ namespace wpi
             Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
 
             ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
             // Patch MainOS MSCOREE.DLL
             ////////////////////////////////////////////////////////////////////////////
 
             filePath = MainOSPath + @"Windows\System32\MSCOREE.DLL";
+            Console.WriteLine("Patch {0}", filePath);
 
             // Enable Take Ownership AND Restore ownership to original owner
             // Take Ownership Privilge is not enough.
@@ -1538,12 +1424,12 @@ namespace wpi
 
             Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
 
-            ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
+            //////////////////////////////////////////////////////////////////////////// 
             // Patch MainOS AUDIODG.EXE
             ////////////////////////////////////////////////////////////////////////////
 
             filePath = MainOSPath + @"Windows\System32\AUDIODG.EXE";
+            Console.WriteLine("Patch {0}", filePath);
 
             // Enable Take Ownership AND Restore ownership to original owner
             // Take Ownership Privilge is not enough.
@@ -1562,12 +1448,12 @@ namespace wpi
 
             Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
 
-            ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
+            //////////////////////////////////////////////////////////////////////////// 
             // Patch MainOS NTOSKRNL.EXE
             ////////////////////////////////////////////////////////////////////////////
 
             filePath = MainOSPath + @"Windows\System32\NTOSKRNL.EXE";
+            Console.WriteLine("Patch {0}", filePath);
 
             // Enable Take Ownership AND Restore ownership to original owner
             // Take Ownership Privilge is not enough.
@@ -1671,11 +1557,11 @@ namespace wpi
             Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
 
             ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
             // Patch MainOS winload.efi
             ////////////////////////////////////////////////////////////////////////////
 
             filePath = MainOSPath + @"Windows\System32\BOOT\winload.efi";
+            Console.WriteLine("Patch {0}", filePath);
 
             // Enable Take Ownership AND Restore ownership to original owner
             // Take Ownership Privilge is not enough.
@@ -1695,11 +1581,11 @@ namespace wpi
             Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
 
             ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
             // Patch MainOS ci.dll
             ////////////////////////////////////////////////////////////////////////////
 
             filePath = MainOSPath + @"Windows\System32\ci.dll";
+            Console.WriteLine("Patch {0}", filePath);
 
             // Enable Take Ownership AND Restore ownership to original owner
             // Take Ownership Privilge is not enough.
@@ -1719,13 +1605,42 @@ namespace wpi
             Privilege.finishFileModification(filePath, originalACL, restorePrivilege);
             rootSuccess = true;
 
+            //////////////////////////////////////////////////////////////////////////////
+            //// Update BCD content
+            //// Deactivate "integrity check"
+            //////////////////////////////////////////////////////////////////////////////
+
+            Console.WriteLine("\nSet \"nointegritychecks yes\" in BCD.");
+            string BCDpath = EFIESPPath + @"efi\Microsoft\Boot\BCD";
+            Process process2 = new Process();
+            process2.StartInfo.FileName = "cmd.exe";
+            process2.StartInfo.Arguments = "/c bcdedit /store \"" + BCDpath + "\"  /set {01de5a27-8705-40db-bad6-96fa5187d4a6} nointegritychecks yes "; // Windows Boot Application "Mobile Startup App" (mobilestartup.efi)
+            process2.StartInfo.UseShellExecute = false;
+            process2.StartInfo.RedirectStandardOutput = true;
+            if (verbose) Console.WriteLine("\nExecute:\n{0} {1}", process2.StartInfo.FileName, process2.StartInfo.Arguments);
+            process2.Start();
+            process2.WaitForExit();
+            string processOutput2 = process2.StandardOutput.ReadToEnd();
+            if (verbose) Console.WriteLine("\nResult:\n{0}", processOutput2);
+
+            process2 = new Process();
+            process2.StartInfo.FileName = "cmd.exe";
+            process2.StartInfo.Arguments = "/c bcdedit /store \"" + BCDpath + "\"  /set {7619dcc9-fafe-11d9-b411-000476eba25f} nointegritychecks yes "; // Windows Boot Loader "Windows Loader" (winload.efi)
+            process2.StartInfo.UseShellExecute = false;
+            process2.StartInfo.RedirectStandardOutput = true;
+            if (verbose) Console.WriteLine("\nExecute:\n{0} {1}", process2.StartInfo.FileName, process2.StartInfo.Arguments);
+            process2.Start();
+            process2.WaitForExit();
+            processOutput2 = process2.StandardOutput.ReadToEnd();
+            if (verbose) Console.WriteLine("\nResult:\n{0}", processOutput2);
+
+
             ////////////////////////////////////////////////////////////////////////////
-            // ROOT mode 
             // Reboot from Mass Storage to Normal mode
             ////////////////////////////////////////////////////////////////////////////
-        exit_mass_storage:
+            exit_mass_storage:
             // When in Mass Storage mode it's only possible to communicate using the com port (Qualcomm HS-USB Diagnostics 9006)
-            Console.Write("\nLook for a phone connected on a USB port and exposing a \"Com Port\" device interface.");
+            Console.Write("\nLook for a phone exposing a \"Com Port\" device interface.");
             devicePath = null;
             for (int i = 0; i < 15; i++) // Wait 15s max
             {
@@ -1765,10 +1680,10 @@ namespace wpi
             if (verbose) Console.WriteLine("\nExecute:\n{0} {1}", process.StartInfo.FileName, process.StartInfo.Arguments);
             process.Start();
             process.WaitForExit();
-            string output = process.StandardOutput.ReadToEnd();
-            if (verbose) Console.WriteLine("\nResult:\n{0}",output);
+            string processOutput = process.StandardOutput.ReadToEnd();
+            if (verbose) Console.WriteLine("\nResult:\n{0}",processOutput);
             string portName = null;
-            Match portNameRegEx = Regex.Match(output, @".*(COM[0-9]+)");
+            Match portNameRegEx = Regex.Match(processOutput, @".*(COM[0-9]+)");
             if (portNameRegEx.Success)
             {
                 portName= portNameRegEx.Groups[1].Value;
@@ -1842,18 +1757,11 @@ namespace wpi
         {
             Console.WriteLine("Usage:");
             Console.WriteLine("[--verbose]");
-            Console.WriteLine("--mode=REPAIR");
             Console.WriteLine("\t--ffu=<.ffu file>");
+            Console.WriteLine("\t--donorFfu=<.ffu file containing of valid mobilestartup.efi>");
             Console.WriteLine("\t--hex=<.hex programmer file>");
-            Console.WriteLine("--mode=UNLOCK");
-            Console.WriteLine("\t--ffu=<.ffu file>");
-            Console.WriteLine("\t--hex=<.hex programmer file>");
-            Console.WriteLine("\t--bin=<.bin engeeniring SBL3 file>");
-            Console.WriteLine("--mode=ROOT");
-            Console.WriteLine("--mode=UNLOCK_AND_ROOT");
-            Console.WriteLine("\t--ffu=<.ffu file>");
-            Console.WriteLine("\t--hex=<.hex programmer file>");
-            Console.WriteLine("\t--bin=<.bin engeeniring SBL3 file>");
+            Console.WriteLine("\t--sbl3Bin=<.bin engeeniring SBL3 file>");
+            Console.WriteLine("\t--uefiBsNvBin=<.bin unlocked UEFI_BS_NV file>");
         }
 
         private static void printRawConsole(byte[] values, int length, bool write)
