@@ -4,7 +4,8 @@ The goal was to create a command line version of [WPInternals](https://github.co
 
 > [!CAUTION]
 > Only Lumia 520 is supported.  
-> Only OS version 8.10.14234.375 is supporter
+> Only OS version 8.10.14234.375 is supported.  
+> Only donor OS version 10.0.10586.318 is supported.  
 
 ## General usage
 
