@@ -32,8 +32,6 @@ To unlock the bootloader and root the OS you have to give 5 files in arguments:
 
 ![](wpi01.png)
 
-![](wpi02.png)
-
 The optional parameter `--verbose` activates the display of some insights (for example the list of partitions of the GPT) but also all the data exchanged between the host computer and the phone (including the content of the flashed partitions). If you activate this option I advise to redirect the output into a file (**more than 35GB are logged when you unlock a phone !**).
 
 Extract of _verbose_ log:
