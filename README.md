@@ -19,7 +19,7 @@ To unlock the bootloader and root the OS you have to give 5 files in arguments:
 > [!NOTE]
 > The special version of the partition UEFI_BS_NV is available at the root of this GitHub repository (this is the uncompressed version of the one supplied with [WPInternals](https://github.com/ReneLergner/WPinternals) for family A phones).   
 
-> [!WARN]
+> [!WARNING]
 > The program must be run as an Administrator (in order to get SeRestorePrivilege for example).
 
 ![](wpi01.png)
