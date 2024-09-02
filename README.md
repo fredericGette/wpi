@@ -18,7 +18,7 @@ Without the optional parameter `--repair`, this program executes the following s
 ## General usage
 
 To unlock the bootloader and root the OS you have to give 5 files in arguments:  
-- A FFU file corresponding to the partitions currently installed in the phone (it will be our first source to get the binaries of the partitions).
+- A original FFU file compatible with in the phone (it will be our first source to get the binaries of the partitions).
 - An image file of an engineering SBL3 (the "engineering" version contains the codes required to boot in "Mass Storage" mode).
 - A .hex file containing a programmer (we will use it to flash unsigned images of some partitions).
 - A _donor_ FFU file from which we a going to copy the mobilestartup.efi file.
