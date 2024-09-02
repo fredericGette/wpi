@@ -7,6 +7,14 @@ The goal was to create a command line version of [WPInternals](https://github.co
 > Only OS version 8.10.14234.375 is supported.  
 > Only donor OS version 10.0.10586.318 is supported.  
 
+Without the optional parameter `--repair`, this program executes the following steps:  
+
+- Prepare the patched binaries to copy into the phone.  
+- Check the compatibility of the phone.
+- Flash th original FFU (lock a previously unlocked phone).
+- Flash the patched bootloaders
+- Patch some files to unlock UEFI and root the main OS.
+
 ## General usage
 
 To unlock the bootloader and root the OS you have to give 5 files in arguments:  
