@@ -83,7 +83,9 @@ If you get this error message, close any other program which can try to communic
 Unhandled Exception: System.Exception: Failed to open device. ---> System.Exception: Failed to open WinUSB device handle.
 ```
 
-The optional parameter `--repair` can be used when the phone is blocked in Emergency Download (EDL) mode. 
+The optional parameter `--repair` can be used when the phone is blocked in Emergency Download (EDL) mode.  
+
+The parameter `--mass2normal` can be used alone to switch back from *mass storage* mode to *normal* mode.
 
 ## Drivers required
 
