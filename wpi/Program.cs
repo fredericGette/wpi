@@ -41,6 +41,14 @@ namespace wpi
             string programmerPath = getStringParameter("hex", args); // Programmer file (.hex) compatible with the phone.
             verbose = getBoolParameter("verbose", args);  // optional.
             bool repair = getBoolParameter("repair", args);  // optional.
+            bool exitMassStorage = getBoolParameter("mass2normal", args);  // optional.
+
+            bool rootSuccess = false;
+
+            if (exitMassStorage)
+            {
+                goto exit_mass_storage;
+            }
 
             if (ffuPath == null || !File.Exists(ffuPath))
             {
@@ -1122,7 +1130,6 @@ namespace wpi
             ////////////////////////////////////////////////////////////////////////////
             // Switch to "mass storage" mode to patch the MainOS and EFIESP partitions
             ////////////////////////////////////////////////////////////////////////////
-            bool rootSuccess = false;
 
             Console.WriteLine("\nSwitch to \"mass storage\" mode...");
             byte[] MassStorageCommand = new byte[] { 0x4E, 0x4F, 0x4B, 0x4D }; // NOKM = Mass Storage
